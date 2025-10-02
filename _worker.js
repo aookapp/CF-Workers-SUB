@@ -1,4 +1,3 @@
-
 // 部署完成后在网址后面加上这个，获取自建节点和机场聚合节点，/?token=auto或/auto或
 
 let mytoken = 'auto';
@@ -12,11 +11,17 @@ let total = 99;//TB
 let timestamp = 4102329600000;//2099-12-31
 
 //节点链接 + 订阅链接
+// 这里是新的分组格式示例，您可以直接在KV中按此格式编辑
 let MainData = `
+[group_A]
 https://raw.githubusercontent.com/mfuu/v2ray/master/v2ray
 https://raw.githubusercontent.com/peasoft/NoMoreWalls/master/list_raw.txt
+
+[group_B]
 https://raw.githubusercontent.com/ermaozi/get_subscribe/main/subscribe/v2ray.txt
 https://raw.githubusercontent.com/aiboboxx/v2rayfree/main/v2
+
+[all_in_one]
 https://raw.githubusercontent.com/mahdibland/SSAggregator/master/sub/airport_sub_merge.txt
 https://raw.githubusercontent.com/mahdibland/SSAggregator/master/sub/sub_merge.txt
 https://raw.githubusercontent.com/Pawdroid/Free-servers/refs/heads/main/sub
@@ -72,6 +77,10 @@ export default {
 				},
 			});
 		} else {
+			// ############# START: 代码修改区域 #############
+			// 新增：从URL中获取group参数
+			const groupName = url.searchParams.get('group');
+
 			if (env.KV) {
 				await 迁移地址列表(env, 'LINK.txt');
 				if (userAgent.includes('mozilla') && !url.search) {
@@ -82,9 +91,31 @@ export default {
 				}
 			} else {
 				MainData = env.LINK || MainData;
-				if (env.LINKSUB) urls = await ADD(env.LINKSUB);
+				if (env.LINKSUB) urls = await ADD(env.LINKSUB); // 注意: LINKSUB 变量中的链接不会参与分组
 			}
-			let 重新汇总所有链接 = await ADD(MainData + '\n' + urls.join('\n'));
+
+			// 新增：调用分组解析函数
+			const subscriptionGroups = await parseGroupedSubscriptions(MainData);
+			let linksToProcess;
+
+			if (groupName && subscriptionGroups.has(groupName)) {
+				// 如果URL中指定了分组，并且该分组存在
+				linksToProcess = subscriptionGroups.get(groupName);
+				await sendMessage(`#获取分组订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `分组: ${groupName}\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+			} else {
+				// 默认行为：如果未指定分组或分组不存在，则合并所有链接
+				linksToProcess = subscriptionGroups.get('all');
+				if (env.LINKSUB) { // 合并来自 LINKSUB 的链接
+					const extraUrls = await ADD(env.LINKSUB);
+					linksToProcess = linksToProcess.concat(extraUrls);
+				}
+				await sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+			}
+			
+			// 使用原始变量名，以减少对后续代码的改动
+			let 重新汇总所有链接 = linksToProcess;
+			// ############# END: 代码修改区域 #############
+
 			let 自建节点 = "";
 			let 订阅链接 = "";
 			for (let x of 重新汇总所有链接) {
@@ -96,7 +127,6 @@ export default {
 			}
 			MainData = 自建节点;
 			urls = await ADD(订阅链接);
-			await sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 
 			let 订阅格式 = 'base64';
 			if (userAgent.includes('null') || userAgent.includes('subconverter') || userAgent.includes('nekobox') || userAgent.includes(('CF-Workers-SUB').toLowerCase())) {
@@ -237,6 +267,43 @@ async function ADD(envadd) {
 	//console.log(add);
 	return add;
 }
+
+// ############# START: 新增函数 #############
+/**
+ * 解析带有分组标记的订阅链接文本
+ * @param {string} rawData 包含分组信息的原始文本
+ * @returns {Map<string, string[]>} 返回一个Map，键是组名，值是该组的链接数组
+ */
+async function parseGroupedSubscriptions(rawData) {
+    const groups = new Map();
+    let currentGroup = null;
+    const allLinks = []; // 用于存储所有链接，以兼容默认行为
+
+    const lines = rawData.split('\n').map(line => line.trim()).filter(line => line !== '' && !line.startsWith('#'));
+
+    for (const line of lines) {
+        // 匹配 [group_name] 格式
+        const groupMatch = line.match(/^\[(.+)\]$/);
+        if (groupMatch) {
+            currentGroup = groupMatch[1].trim();
+            if (!groups.has(currentGroup)) {
+                groups.set(currentGroup, []);
+            }
+        } else if (line.includes('://')) { // 简单验证是否为链接
+            allLinks.push(line); // 为默认行为准备，将链接添加到“全部”列表中
+            if (currentGroup) {
+                // 如果当前处于一个分组内，将链接添加到对应分组
+                groups.get(currentGroup).push(line);
+            }
+        }
+    }
+    
+    // 为了向后兼容，创建一个 'all' 组，包含所有解析到的链接
+    groups.set('all', allLinks);
+    return groups;
+}
+// ############# END: 新增函数 #############
+
 
 async function nginx() {
 	const text = `
@@ -621,6 +688,13 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					loon订阅地址:<br>
 					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/${mytoken}?loon','qrcode_5')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/${mytoken}?loon</a><br>
 					<div id="qrcode_5" style="margin: 10px 10px 10px 10px;"></div>
+					
+					---------------------------------------------------------------<br>
+                    <strong>分组订阅使用说明:</strong><br>
+                    1. 在下方的编辑器中, 使用 <code>[组名]</code> 的格式来定义分组。<br>
+                    2. 获取订阅时, 在订阅链接末尾加上 <code>&amp;group=组名</code> 即可获取指定分组。<br>
+                    3. 例如: <code>https://${url.hostname}/${mytoken}?clash&amp;group=组名</code><br>
+                    4. 如果不提供 group 参数, 将会合并所有链接。<br>
 					&nbsp;&nbsp;<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">查看访客订阅∨</a></strong><br>
 					<div id="noticeContent" class="notice-content" style="display: none;">
 						---------------------------------------------------------------<br>
@@ -836,4 +910,5 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 			headers: { "Content-Type": "text/plain;charset=utf-8" }
 		});
 	}
+
 }
