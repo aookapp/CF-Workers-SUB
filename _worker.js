@@ -79,12 +79,6 @@ export default {
 		} else {
 			// ############# START: 代码修改区域 #############
 
-
-			
-			// 新增：从URL中获取group参数
-
-
-
 			////////////////////////////////////////
 // ...
 			// 从URL中获取group参数
@@ -97,15 +91,26 @@ export default {
 			}
 
 			// 调用分组解析函数
+// ...
 			const subscriptionGroups = await parseGroupedSubscriptions(MainData);
 			let linksToProcess;
 
-			if (groupName && subscriptionGroups.has(groupName)) {
+			// 新增一个检查，判断URL中是否包含任何已知的订阅格式参数
+			const hasSubscriptionParams = url.searchParams.has('clash') || url.searchParams.has('sb') || url.searchParams.has('singbox') || url.searchParams.has('b64') || url.searchParams.has('base64') || url.searchParams.has('surge') || url.searchParams.has('quanx') || url.searchParams.has('loon');
+
+			// 优先处理后台访问请求
+			// 条件：如果是从浏览器(mozilla)访问，并且URL中没有附带任何订阅格式参数，则判定为访问后台
+			if (userAgent.includes('mozilla') && !hasSubscriptionParams) {
+				await sendMessage(`#编辑订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+				// 直接调用KV函数返回后台HTML页面
+				return await KV(request, env, 'LINK.txt', 访客订阅);
+
+			} else if (groupName && subscriptionGroups.has(groupName)) {
 				// 用户请求的是一个已定义的分组，正常处理
 				linksToProcess = subscriptionGroups.get(groupName);
 				await sendMessage(`#获取分组订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `分组: ${groupName}\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 			
-			} else if (!groupName && env.ALLTOKEN && allToken === env.ALLTOKEN) {
+			} else if (!groupName && env.ALLTOKEN && all === env.ALLTOKEN) {
 				// 用户没有指定分组，但提供了正确的“总订阅专属密码”
 				linksToProcess = subscriptionGroups.get('all');
 				if (env.LINKSUB) {
@@ -115,9 +120,9 @@ export default {
 				await sendMessage(`#获取总订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 
 			} else {
-				// 其他所有情况（如直接访问、密码错误等），拒绝访问
+				// 其他所有订阅类请求（如直接访问总订阅、密码错误等），拒绝访问
 				await sendMessage(`#总订阅拦截 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-				return new Response('Access Denied. Missing or incorrect token for all groups subscription.', { status: 403 });
+				return new Response('Access Denied. This is not a valid subscription link.', { status: 403 });
 			}
 // ...
 
@@ -923,4 +928,5 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 	}
 
 }
+
 
