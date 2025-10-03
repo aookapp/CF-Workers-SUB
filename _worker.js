@@ -100,7 +100,7 @@ export default {
 
 			// 3. 从URL中获取所需参数
 			const groupName = url.searchParams.get('group');
-			const allToken = url.searchParams.get('all_token');
+			const allToken = url.searchParams.get('all');
 			const hasSubscriptionParams = url.searchParams.has('clash') || url.searchParams.has('sb') || url.searchParams.has('singbox') || url.searchParams.has('b64') || url.searchParams.has('base64') || url.searchParams.has('surge') || url.searchParams.has('quanx') || url.searchParams.has('loon');
 
 			// 4. 定义清晰的身份标识
@@ -702,7 +702,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					Subscribe / sub 订阅地址, 点击链接自动 <strong>复制订阅链接</strong> 并 <strong>生成订阅二维码</strong> <br>
 					---------------------------------------------------------------<br>
 					自适应订阅地址:<br>
-					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/${mytoken}?sub','qrcode_0')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/${mytoken}</a><br>
+					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/${mytoken}','qrcode_0')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/${mytoken}</a><br>
 					<div id="qrcode_0" style="margin: 10px 10px 10px 10px;"></div>
 					Base64订阅地址:<br>
 					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/${mytoken}?b64','qrcode_1')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/${mytoken}?b64</a><br>
@@ -721,11 +721,14 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					<div id="qrcode_5" style="margin: 10px 10px 10px 10px;"></div>
 					
 					---------------------------------------------------------------<br>
-                    <strong>分组订阅使用说明:</strong><br>
-                    1. 在下方的编辑器中, 使用 <code>[组名]</code> 的格式来定义分组。<br>
-                    2. 获取订阅时, 在订阅链接末尾加上 <code>&amp;group=组名</code> 即可获取指定分组。<br>
-                    3. 例如: <code>https://${url.hostname}/${mytoken}?clash&amp;group=组名</code><br>
-                    4. 如果不提供 group 参数, 将会合并所有链接。<br>
+                    <strong>订阅使用说明:</strong><br>
+                    1. 在下方编辑器中, 使用 <code>[组名]</code> 格式来定义不同的订阅分组。<br>
+                    2. <strong>获取指定分组:</strong> 在订阅链接末尾加上 <code>&amp;group=组名</code><br>
+                    &nbsp;&nbsp;&nbsp;→ 例如: <code>https://${url.hostname}/${mytoken}?clash&amp;group=<strong>某个组名</strong></code><br>
+                    3. <strong>获取总订阅:</strong> 在订阅链接末尾加上 <code>&amp;all_token=您的总订阅密码</code><br>
+                    &nbsp;&nbsp;&nbsp;→ (总订阅密码需在Cloudflare后台设置 <code>ALL_GROUPS_TOKEN</code> 环境变量)<br>
+                    &nbsp;&nbsp;&nbsp;→ 例如: <code>https://${url.hostname}/${mytoken}?clash&amp;all_token=<strong>您的密码</strong></code><br>
+                    4. <strong>注意:</strong> 为了安全, 管理员直接访问订阅链接 (不加 group 或 all_token) 将不会返回任何节点。<br>
 					&nbsp;&nbsp;<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">查看访客订阅∨</a></strong><br>
 					<div id="noticeContent" class="notice-content" style="display: none;">
 						---------------------------------------------------------------<br>
@@ -943,6 +946,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 	}
 
 }
+
 
 
 
