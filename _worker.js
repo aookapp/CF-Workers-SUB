@@ -81,37 +81,42 @@ export default {
 
 			////////////////////////////////////////
 // ...
-			// 从URL中获取group参数
-			const groupName = url.searchParams.get('group');
-			// 获取我们为总订阅设置的专属密码
-			const allToken = url.searchParams.get('all');
 
+			// 1. 【重要修复】将数据读取逻辑提前
+			// 无论什么请求，只要token有效，就立刻从KV或环境变量中加载链接数据
 			if (env.KV) {
-// ...
+				await 迁移地址列表(env, 'LINK.txt');
+				MainData = await env.KV.get('LINK.txt') || MainData;
+			} else {
+				MainData = env.LINK || MainData;
+				if (env.LINKSUB) urls = await ADD(env.LINKSUB);
 			}
 
-			// 调用分组解析函数
-// ...
+			// 2. 解析所有分组，为后续逻辑做准备
 			const subscriptionGroups = await parseGroupedSubscriptions(MainData);
 			let linksToProcess;
 
-			// 新增一个检查，判断URL中是否包含任何已知的订阅格式参数
-			const hasSubscriptionParams = url.searchParams.has('clash') || url.searchParams.has('sb') || url.searchParams.has('singbox') || url.searchParams.has('b64') || url.searchParams.has('base64') || url.searchParams.has('surge') || url.searchParams.has('quanx') || url.searchParams.has('loon');
+			// 3. 从URL中获取所需参数
+			const groupName = url.searchParams.get('group');
+			const allToken = url.searchParams.get('all_token');
 
-			// 优先处理后台访问请求
-			// 条件：如果是从浏览器(mozilla)访问，并且URL中没有附带任何订阅格式参数，则判定为访问后台
-			if (userAgent.includes('mozilla') && !hasSubscriptionParams) {
+			// 检查URL中是否包含任何已知的订阅格式参数
+			const hasSubscriptionParams = url.searchParams.has('clash') || url.searchParams.has('sb') || url.searchParams.has('singbox') || url.searchParams.has('b64') || url.searchParams.has('base64') || url.searchParams.has('surge') || url.searchParams.has('quanx') || url.search_params.has('loon');
+
+			// 4. 开始进行请求分类处理 (新的、更严谨的逻辑判断)
+			// 条件一：判断是否为后台编辑请求 (最高优先级)
+			// 必须同时满足：是浏览器 + 没有订阅参数 + 使用的是主Token
+			if (userAgent.includes('mozilla') && !hasSubscriptionParams && token === mytoken) {
 				await sendMessage(`#编辑订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-				// 直接调用KV函数返回后台HTML页面
 				return await KV(request, env, 'LINK.txt', 访客订阅);
 
+			// 条件二：判断是否为分组订阅请求
 			} else if (groupName && subscriptionGroups.has(groupName)) {
-				// 用户请求的是一个已定义的分组，正常处理
 				linksToProcess = subscriptionGroups.get(groupName);
 				await sendMessage(`#获取分组订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `分组: ${groupName}\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 			
-			} else if (!groupName && env.ALLTOKEN && all === env.ALLTOKEN) {
-				// 用户没有指定分组，但提供了正确的“总订阅专属密码”
+			// 条件三：判断是否为受保护的总订阅请求
+			} else if (!groupName && env.ALL_GROUPS_TOKEN && allToken === env.ALL_GROUPS_TOKEN) {
 				linksToProcess = subscriptionGroups.get('all');
 				if (env.LINKSUB) {
 					const extraUrls = await ADD(env.LINKSUB);
@@ -119,11 +124,23 @@ export default {
 				}
 				await sendMessage(`#获取总订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 
+			// 条件四：判断是否为访客订阅请求 (允许没有分组)
+			} else if (token === 访客订阅 && !groupName) {
+				linksToProcess = subscriptionGroups.get('all');
+				if (env.LINKSUB) {
+					const extraUrls = await ADD(env.LINKSUB);
+					linksToProcess = linksToProcess.concat(extraUrls);
+				}
+				await sendMessage(`#获取访客订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+				
 			} else {
-				// 其他所有订阅类请求（如直接访问总订阅、密码错误等），拒绝访问
-				await sendMessage(`#总订阅拦截 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-				return new Response('Access Denied. This is not a valid subscription link.', { status: 403 });
+				// 条件五：所有其他不满足条件的请求，全部拒绝
+				await sendMessage(`#无效订阅拦截 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+				return new Response('Access Denied. Invalid subscription link or parameters.', { status: 403 });
 			}
+			
+			// 5. 对最终筛选出的链接进行后续处理 (这部分代码您不需要动，它在if/else之后)
+			// let 重新汇总所有链接 = linksToProcess; ... (直到函数结束)
 // ...
 
 
@@ -928,5 +945,6 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 	}
 
 }
+
 
 
