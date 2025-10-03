@@ -725,10 +725,10 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
                     1. 在下方编辑器中, 使用 <code>[组名]</code> 格式来定义不同的订阅分组。<br>
                     2. <strong>获取指定分组:</strong> 在订阅链接末尾加上 <code>&amp;group=组名</code><br>
                     &nbsp;&nbsp;&nbsp;→ 例如: <code>https://${url.hostname}/${mytoken}?clash&amp;group=<strong>某个组名</strong></code><br>
-                    3. <strong>获取总订阅:</strong> 在订阅链接末尾加上 <code>&amp;all_token=您的总订阅密码</code><br>
+                    3. <strong>获取总订阅:</strong> 在订阅链接末尾加上 <code>&amp;all=您的总订阅密码</code><br>
                     &nbsp;&nbsp;&nbsp;→ (总订阅密码需在Cloudflare后台设置 <code>ALL_GROUPS_TOKEN</code> 环境变量)<br>
-                    &nbsp;&nbsp;&nbsp;→ 例如: <code>https://${url.hostname}/${mytoken}?clash&amp;all_token=<strong>您的密码</strong></code><br>
-                    4. <strong>注意:</strong> 为了安全, 管理员直接访问订阅链接 (不加 group 或 all_token) 将不会返回任何节点。<br>
+                    &nbsp;&nbsp;&nbsp;→ 例如: <code>https://${url.hostname}/${mytoken}?clash&amp;all=<strong>您的密码</strong></code><br>
+                    4. <strong>注意:</strong> 为了安全, 管理员直接访问订阅链接 (不加 group 或 all) 将不会返回任何节点。<br>
 					&nbsp;&nbsp;<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">查看访客订阅∨</a></strong><br>
 					<div id="noticeContent" class="notice-content" style="display: none;">
 						---------------------------------------------------------------<br>
@@ -946,6 +946,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 	}
 
 }
+
 
 
 
