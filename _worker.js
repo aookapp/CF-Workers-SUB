@@ -125,13 +125,13 @@ export default {
 				await sendMessage(`#获取总订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 
 			// 条件四：判断是否为访客订阅请求 (允许没有分组)
-			} else if (token === 访客订阅 && !groupName) {
-				linksToProcess = subscriptionGroups.get('all');
-				if (env.LINKSUB) {
-					const extraUrls = await ADD(env.LINKSUB);
-					linksToProcess = linksToProcess.concat(extraUrls);
-				}
-				await sendMessage(`#获取访客订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+			//} else if (token === 访客订阅 && !groupName) {
+			///	linksToProcess = subscriptionGroups.get('all');
+			///	if (env.LINKSUB) {
+				///	const extraUrls = await ADD(env.LINKSUB);
+				///	linksToProcess = linksToProcess.concat(extraUrls);
+				//}
+			///	await sendMessage(`#获取访客订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 				
 			} else {
 				// 条件五：所有其他不满足条件的请求，全部拒绝
@@ -945,6 +945,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 	}
 
 }
+
 
 
 
