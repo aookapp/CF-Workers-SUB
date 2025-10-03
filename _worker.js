@@ -106,7 +106,7 @@ export default {
 			// 4. 开始进行请求分类处理 (新的、更严谨的逻辑判断)
 			// 条件一：判断是否为后台编辑请求 (最高优先级)
 			// 必须同时满足：是浏览器 + 没有订阅参数 + 使用的是主Token
-			if (userAgent.includes('mozilla') && !hasSubscriptionParams && token === mytoken) {
+			if (userAgent.includes('mozilla') && !hasSubscriptionParams && (token === mytoken || url.pathname.startsWith('/' + mytoken))) {
 				await sendMessage(`#编辑订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 				return await KV(request, env, 'LINK.txt', 访客订阅);
 
@@ -945,6 +945,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 	}
 
 }
+
 
 
 
