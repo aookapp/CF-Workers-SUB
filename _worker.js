@@ -78,40 +78,51 @@ export default {
 			});
 		} else {
 			// ############# START: 代码修改区域 #############
+
+
+			
 			// 新增：从URL中获取group参数
+
+
+
+			////////////////////////////////////////
+// ...
+			// 从URL中获取group参数
 			const groupName = url.searchParams.get('group');
+			// 获取我们为总订阅设置的专属密码
+			const allToken = url.searchParams.get('all');
 
 			if (env.KV) {
-				await 迁移地址列表(env, 'LINK.txt');
-				if (userAgent.includes('mozilla') && !url.search) {
-					await sendMessage(`#编辑订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-					return await KV(request, env, 'LINK.txt', 访客订阅);
-				} else {
-					MainData = await env.KV.get('LINK.txt') || MainData;
-				}
-			} else {
-				MainData = env.LINK || MainData;
-				if (env.LINKSUB) urls = await ADD(env.LINKSUB); // 注意: LINKSUB 变量中的链接不会参与分组
+// ...
 			}
 
-			// 新增：调用分组解析函数
+			// 调用分组解析函数
 			const subscriptionGroups = await parseGroupedSubscriptions(MainData);
 			let linksToProcess;
 
 			if (groupName && subscriptionGroups.has(groupName)) {
-				// 如果URL中指定了分组，并且该分组存在
+				// 用户请求的是一个已定义的分组，正常处理
 				linksToProcess = subscriptionGroups.get(groupName);
 				await sendMessage(`#获取分组订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `分组: ${groupName}\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-			} else {
-				// 默认行为：如果未指定分组或分组不存在，则合并所有链接
+			
+			} else if (!groupName && env.ALLTOKEN && allToken === env.ALLTOKEN) {
+				// 用户没有指定分组，但提供了正确的“总订阅专属密码”
 				linksToProcess = subscriptionGroups.get('all');
-				if (env.LINKSUB) { // 合并来自 LINKSUB 的链接
+				if (env.LINKSUB) {
 					const extraUrls = await ADD(env.LINKSUB);
 					linksToProcess = linksToProcess.concat(extraUrls);
 				}
-				await sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+				await sendMessage(`#获取总订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+
+			} else {
+				// 其他所有情况（如直接访问、密码错误等），拒绝访问
+				await sendMessage(`#总订阅拦截 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+				return new Response('Access Denied. Missing or incorrect token for all groups subscription.', { status: 403 });
 			}
-			
+// ...
+
+
+			//////////////////////////////////////////////////
 			// 使用原始变量名，以减少对后续代码的改动
 			let 重新汇总所有链接 = linksToProcess;
 			// ############# END: 代码修改区域 #############
@@ -912,3 +923,4 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 	}
 
 }
+
