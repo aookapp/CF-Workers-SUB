@@ -20,6 +20,11 @@ https://raw.githubusercontent.com/peasoft/NoMoreWalls/master/list_raw.txt
 [group_B]
 https://raw.githubusercontent.com/ermaozi/get_subscribe/main/subscribe/v2ray.txt
 https://raw.githubusercontent.com/aiboboxx/v2rayfree/main/v2
+
+[all_in_one]
+https://raw.githubusercontent.com/mahdibland/SSAggregator/master/sub/airport_sub_merge.txt
+https://raw.githubusercontent.com/mahdibland/SSAggregator/master/sub/sub_merge.txt
+https://raw.githubusercontent.com/Pawdroid/Free-servers/refs/heads/main/sub
 `
 
 let urls = [];
@@ -80,7 +85,7 @@ export default {
 				if (env.LINKSUB) urls = await ADD(env.LINKSUB);
 			}
 
-			// 解析所有分组
+			// 解析所有分组，为后续逻辑做准备
 			const subscriptionGroups = await parseGroupedSubscriptions(MainData);
 			let linksToProcess;
 
@@ -90,7 +95,7 @@ export default {
 			const allToken = url.searchParams.get('all');
 			const hasSubscriptionParams = url.searchParams.has('clash') || url.searchParams.has('sb') || url.searchParams.has('singbox') || url.searchParams.has('b64') || url.searchParams.has('base64') || url.searchParams.has('surge') || url.searchParams.has('quanx') || url.searchParams.has('loon');
 
-			// 定义清晰的身份标识
+			// 身份标识与环境判定
 			const isAdmin = (token === mytoken || url.pathname === '/' + mytoken);
 			const isGuest = (token === 访客订阅);
 			const isBackendRequest = (isAdmin && userAgent.includes('mozilla') && !hasSubscriptionParams);
@@ -98,7 +103,7 @@ export default {
 
 			// 条件一：管理员访问后台页面
 			if (isBackendRequest) {
-				await sendMessage(`#编辑订阅页面登录 ${FileName}`, request.headers.get('CF-Connecting-IP'), `身份: 管理员\nUA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}`);
+				await sendMessage(`#编辑订阅页面登录 ${FileName}`, request.headers.get('CF-Connecting-IP'), `身份: 管理员\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}`);
 				return await KV(request, env, 'LINK.txt', 访客订阅);
 			
 			// 条件二：请求分组订阅（带密码校验功能）
@@ -120,12 +125,12 @@ export default {
 			} else if (!groupName && env.ALL_GROUPS_TOKEN && allToken === env.ALL_GROUPS_TOKEN) {
 				linksToProcess = subscriptionGroups.get('all').links;
 				if (env.LINKSUB) { linksToProcess = linksToProcess.concat(await ADD(env.LINKSUB)); }
-				await sendMessage(`#总订阅拉取成功 ${FileName}`, request.headers.get('CF-Connecting-IP'), `身份: ${身份标签}\nUA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}`);
+				await sendMessage(`#总订阅拉取成功 ${FileName}`, request.headers.get('CF-Connecting-IP'), `身份: ${身份标签}\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 
-			// 条件四：其他所有情况全部拒绝 (例如访客没带分组参数)
+			// 条件四：其他所有情况全部拒绝
 			} else {
 				await sendMessage(`#无效订阅拦截 ${FileName}`, request.headers.get('CF-Connecting-IP'), `身份: ${身份标签}\n原因: 缺失分组参数或参数错误\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-				return new Response('Access Denied. Invalid subscription link or parameters. Please check your group name and password.', { status: 403 });
+				return new Response('Access Denied. Invalid subscription link or parameters. Please check group and pass.', { status: 403 });
 			}
 
 			let 重新汇总所有链接 = linksToProcess;
@@ -174,12 +179,10 @@ export default {
 			订阅转换URL += "|" + 请求订阅响应内容[1];
 
 			if (env.WARP) 订阅转换URL += "|" + (await ADD(env.WARP)).join("|");
-			
 			const utf8Encoder = new TextEncoder();
 			const encodedData = utf8Encoder.encode(req_data);
 			const utf8Decoder = new TextDecoder();
 			const text = utf8Decoder.decode(encodedData);
-
 			const uniqueLines = new Set(text.split('\n'));
 			const result = [...uniqueLines].join('\n');
 
@@ -191,12 +194,10 @@ export default {
 					const binary = new TextEncoder().encode(data);
 					let base64 = '';
 					const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-
 					for (let i = 0; i < binary.length; i += 3) {
 						const byte1 = binary[i];
 						const byte2 = binary[i + 1] || 0;
 						const byte3 = binary[i + 2] || 0;
-
 						base64 += chars[byte1 >> 2];
 						base64 += chars[((byte1 & 3) << 4) | (byte2 >> 4)];
 						base64 += chars[((byte2 & 15) << 2) | (byte3 >> 6)];
@@ -231,7 +232,6 @@ export default {
 
 			try {
 				const subConverterResponse = await fetch(subConverterUrl);
-
 				if (!subConverterResponse.ok) {
 					return new Response(base64Data, {
 						headers: {
@@ -321,6 +321,13 @@ async function nginx() {
 	<h1>Welcome to nginx!</h1>
 	<p>If you see this page, the nginx web server is successfully installed and
 	working. Further configuration is required.</p>
+	
+	<p>For online documentation and support please refer to
+	<a href="http://nginx.org/">nginx.org</a>.<br/>
+	Commercial support is available at
+	<a href="http://nginx.com/">nginx.com</a>.</p>
+	
+	<p><em>Thank you for using nginx.</em></p>
 	</body>
 	</html>
 	`
@@ -330,12 +337,10 @@ async function nginx() {
 async function sendMessage(type, ip, add_data = "") {
 	if (BotToken !== '' && ChatID !== '') {
 		let msg = "";
-		
-		// 修复1：将参数里的 & 符号替换为全角 ＆，防止触发 Telegram 的 HTML 解析报错
+		// 【重要修复】转义 & 符号，防止 URL 里的参数导致 TG 的 HTML 解析失败
 		let safe_add_data = add_data.replace(/&/g, '＆');
-
+		
 		try {
-			// 修复2：增加 try-catch 保护，防止 ip-api 接口宕机/限流导致整个脚本崩溃
 			const response = await fetch(`http://ip-api.com/json/${ip}?lang=zh-CN`);
 			if (response.status == 200) {
 				const ipInfo = await response.json();
@@ -344,15 +349,14 @@ async function sendMessage(type, ip, add_data = "") {
 				msg = `${type}\nIP: ${ip}\n${safe_add_data}`;
 			}
 		} catch (error) {
-			// 如果查 IP 失败，降级发送基础信息，保证依然能收到推送
+			// API 超时则降级发送，保证不漏通知
 			msg = `${type}\nIP: ${ip}\n${safe_add_data}`;
 		}
 
 		let url = "https://api.telegram.org/bot" + BotToken + "/sendMessage?chat_id=" + ChatID + "&parse_mode=HTML&text=" + encodeURIComponent(msg);
-		
 		try {
 			return await fetch(url, {
-				method: 'GET',
+				method: 'get',
 				headers: {
 					'Accept': 'text/html,application/xhtml+xml,application/xml;',
 					'Accept-Encoding': 'gzip, deflate, br',
@@ -360,7 +364,7 @@ async function sendMessage(type, ip, add_data = "") {
 				}
 			});
 		} catch (e) {
-			console.error("TG Push Failed:", e);
+			console.error("Telegram Push Error: ", e);
 		}
 	}
 }
@@ -390,6 +394,7 @@ function clashFix(content) {
 		} else {
 			lines = content.split('\n');
 		}
+
 		let result = "";
 		for (let line of lines) {
 			if (line.includes('type: wireguard')) {
@@ -400,6 +405,7 @@ function clashFix(content) {
 				result += line + '\n';
 			}
 		}
+
 		content = result;
 	}
 	return content;
@@ -408,6 +414,7 @@ function clashFix(content) {
 async function proxyURL(proxyURL, url) {
 	const URLs = await ADD(proxyURL);
 	const fullURL = URLs[Math.floor(Math.random() * URLs.length)];
+
 	let parsedURL = new URL(fullURL);
 	let URLProtocol = parsedURL.protocol.slice(0, -1) || 'https';
 	let URLHostname = parsedURL.hostname;
@@ -417,13 +424,16 @@ async function proxyURL(proxyURL, url) {
 		URLPathname = URLPathname.slice(0, -1);
 	}
 	URLPathname += url.pathname;
+
 	let newURL = `${URLProtocol}://${URLHostname}${URLPathname}${URLSearch}`;
 	let response = await fetch(newURL);
+
 	let newResponse = new Response(response.body, {
 		status: response.status,
 		statusText: response.statusText,
 		headers: response.headers
 	});
+
 	newResponse.headers.set('X-New-URL', newURL);
 	return newResponse;
 }
@@ -431,7 +441,7 @@ async function proxyURL(proxyURL, url) {
 async function getSUB(api, request, 追加UA, userAgentHeader) {
 	if (!api || api.length === 0) {
 		return [];
-	} else api = [...new Set(api)]; 
+	} else api = [...new Set(api)];
 	let newapi = "";
 	let 订阅转换URLs = "";
 	let 异常订阅 = "";
@@ -442,7 +452,6 @@ async function getSUB(api, request, 追加UA, userAgentHeader) {
 
 	try {
 		const responses = await Promise.allSettled(api.map(apiUrl => getUrl(request, apiUrl, 追加UA, userAgentHeader).then(response => response.ok ? response.text() : Promise.reject(response))));
-
 		const modifiedResponses = responses.map((response, index) => {
 			if (response.status === 'rejected') {
 				const reason = response.reason;
@@ -453,18 +462,17 @@ async function getSUB(api, request, 追加UA, userAgentHeader) {
 			}
 			return { status: response.status, value: response.value, apiUrl: api[index] };
 		});
-
 		for (const response of modifiedResponses) {
 			if (response.status === 'fulfilled') {
 				const content = await response.value || 'null';
 				if (content.includes('proxies:')) {
 					订阅转换URLs += "|" + response.apiUrl; 
 				} else if (content.includes('outbounds"') && content.includes('inbounds"')) {
-					订阅转换URLs += "|" + response.apiUrl; 
+					订阅转换URLs += "|" + response.apiUrl;
 				} else if (content.includes('://')) {
 					newapi += content + '\n'; 
 				} else if (isValidBase64(content)) {
-					newapi += base64Decode(content) + '\n'; 
+					newapi += base64Decode(content) + '\n';
 				} else {
 					const 异常订阅LINK = `trojan://CMLiussss@127.0.0.1:8888?security=tls&allowInsecure=1&type=tcp&headerType=none#%E5%BC%82%E5%B8%B8%E8%AE%A2%E9%98%85%20${response.apiUrl.split('://')[1].split('/')[0]}`;
 					异常订阅 += `${异常订阅LINK}\n`;
@@ -474,8 +482,9 @@ async function getSUB(api, request, 追加UA, userAgentHeader) {
 	} catch (error) {
 		console.error(error); 
 	} finally {
-		clearTimeout(timeout); 
+		clearTimeout(timeout);
 	}
+
 	const 订阅内容 = await ADD(newapi + 异常订阅); 
 	return [订阅内容, 订阅转换URLs];
 }
@@ -594,6 +603,12 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&loon&group=在此填组名&pass=在此填密码','guest_5')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&loon&group=在此填组名&pass=在此填密码</a><br>
 					<div id="guest_5" style="margin: 10px 10px 10px 10px;"></div>
 
+					---------------------------------------------------------------<br>
+					################################################################<br>
+					订阅转换配置<br>
+					---------------------------------------------------------------<br>
+					SUBAPI（订阅转换后端）: <strong>${subProtocol}://${subConverter}</strong><br>
+					SUBCONFIG（订阅转换配置文件）: <strong>${subConfig}</strong><br>
 					---------------------------------------------------------------<br>
 					################################################################<br>
 					${FileName} 汇聚订阅编辑 (请使用 [组名:密码] 划分节点): 
