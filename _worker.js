@@ -20,11 +20,6 @@ https://raw.githubusercontent.com/peasoft/NoMoreWalls/master/list_raw.txt
 [group_B]
 https://raw.githubusercontent.com/ermaozi/get_subscribe/main/subscribe/v2ray.txt
 https://raw.githubusercontent.com/aiboboxx/v2rayfree/main/v2
-
-[all_in_one]
-https://raw.githubusercontent.com/mahdibland/SSAggregator/master/sub/airport_sub_merge.txt
-https://raw.githubusercontent.com/mahdibland/SSAggregator/master/sub/sub_merge.txt
-https://raw.githubusercontent.com/Pawdroid/Free-servers/refs/heads/main/sub
 `
 
 let urls = [];
@@ -85,7 +80,7 @@ export default {
 				if (env.LINKSUB) urls = await ADD(env.LINKSUB);
 			}
 
-			// 解析所有分组，为后续逻辑做准备
+			// 解析所有分组
 			const subscriptionGroups = await parseGroupedSubscriptions(MainData);
 			let linksToProcess;
 
@@ -98,11 +93,12 @@ export default {
 			// 定义清晰的身份标识
 			const isAdmin = (token === mytoken || url.pathname === '/' + mytoken);
 			const isGuest = (token === 访客订阅);
-			const isBackendRequest = (userAgent.includes('mozilla') && !hasSubscriptionParams);
+			const isBackendRequest = (isAdmin && userAgent.includes('mozilla') && !hasSubscriptionParams);
+			const 身份标签 = isAdmin ? '管理员' : (isGuest ? '访客' : '未知');
 
 			// 条件一：管理员访问后台页面
-			if (isAdmin && isBackendRequest) {
-				await sendMessage(`#编辑订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+			if (isBackendRequest) {
+				await sendMessage(`#编辑订阅页面登录 ${FileName}`, request.headers.get('CF-Connecting-IP'), `身份: 管理员\nUA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}`);
 				return await KV(request, env, 'LINK.txt', 访客订阅);
 			
 			// 条件二：请求分组订阅（带密码校验功能）
@@ -112,23 +108,24 @@ export default {
 
 				// 如果分组设置了密码，且密码不匹配（管理员可以直接拉取免密测试）
 				if (expectedPassword && expectedPassword !== groupPass && !isAdmin) {
-					await sendMessage(`#密码错误拦截 ${FileName}`, request.headers.get('CF-Connecting-IP'), `尝试获取分组: ${groupName}\n输入密码: ${groupPass || "未输入"}\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}`);
+					await sendMessage(`#密码错误拦截 ${FileName}`, request.headers.get('CF-Connecting-IP'), `身份: ${身份标签}\n尝试获取分组: ${groupName}\n输入密码: ${groupPass || "未输入"}\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}`);
 					return new Response('Access Denied. Incorrect group password.', { status: 403 });
 				}
 
 				linksToProcess = groupData.links;
-				await sendMessage(`#获取分组订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `分组: ${groupName}\n验证方式: ${isAdmin ? '管理员免密' : (expectedPassword ? '密码验证通过' : '无密码分组')}\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+				const 验证方式 = isAdmin ? '管理员免密' : (expectedPassword ? '密码验证通过' : '无密码分组');
+				await sendMessage(`#拉取成功 ${FileName}`, request.headers.get('CF-Connecting-IP'), `身份: ${身份标签}\n获取分组: ${groupName}\n验证方式: ${验证方式}\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 
 			// 条件三：请求受保护的总订阅
 			} else if (!groupName && env.ALL_GROUPS_TOKEN && allToken === env.ALL_GROUPS_TOKEN) {
 				linksToProcess = subscriptionGroups.get('all').links;
 				if (env.LINKSUB) { linksToProcess = linksToProcess.concat(await ADD(env.LINKSUB)); }
-				await sendMessage(`#获取总订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+				await sendMessage(`#总订阅拉取成功 ${FileName}`, request.headers.get('CF-Connecting-IP'), `身份: ${身份标签}\nUA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}`);
 
-			// 条件四：其他所有情况全部拒绝
+			// 条件四：其他所有情况全部拒绝 (例如访客没带分组参数)
 			} else {
-				await sendMessage(`#无效订阅拦截 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-				return new Response('Access Denied. Invalid subscription link or parameters.', { status: 403 });
+				await sendMessage(`#无效订阅拦截 ${FileName}`, request.headers.get('CF-Connecting-IP'), `身份: ${身份标签}\n原因: 缺失分组参数或参数错误\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+				return new Response('Access Denied. Invalid subscription link or parameters. Please check your group name and password.', { status: 403 });
 			}
 
 			let 重新汇总所有链接 = linksToProcess;
@@ -324,13 +321,6 @@ async function nginx() {
 	<h1>Welcome to nginx!</h1>
 	<p>If you see this page, the nginx web server is successfully installed and
 	working. Further configuration is required.</p>
-	
-	<p>For online documentation and support please refer to
-	<a href="http://nginx.org/">nginx.org</a>.<br/>
-	Commercial support is available at
-	<a href="http://nginx.com/">nginx.com</a>.</p>
-	
-	<p><em>Thank you for using nginx.</em></p>
 	</body>
 	</html>
 	`
@@ -368,15 +358,12 @@ function base64Decode(str) {
 
 async function MD5MD5(text) {
 	const encoder = new TextEncoder();
-
 	const firstPass = await crypto.subtle.digest('MD5', encoder.encode(text));
 	const firstPassArray = Array.from(new Uint8Array(firstPass));
 	const firstHex = firstPassArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
 	const secondPass = await crypto.subtle.digest('MD5', encoder.encode(firstHex.slice(7, 27)));
 	const secondPassArray = Array.from(new Uint8Array(secondPass));
 	const secondHex = secondPassArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
 	return secondHex.toLowerCase();
 }
 
@@ -388,7 +375,6 @@ function clashFix(content) {
 		} else {
 			lines = content.split('\n');
 		}
-
 		let result = "";
 		for (let line of lines) {
 			if (line.includes('type: wireguard')) {
@@ -399,7 +385,6 @@ function clashFix(content) {
 				result += line + '\n';
 			}
 		}
-
 		content = result;
 	}
 	return content;
@@ -408,27 +393,22 @@ function clashFix(content) {
 async function proxyURL(proxyURL, url) {
 	const URLs = await ADD(proxyURL);
 	const fullURL = URLs[Math.floor(Math.random() * URLs.length)];
-
 	let parsedURL = new URL(fullURL);
 	let URLProtocol = parsedURL.protocol.slice(0, -1) || 'https';
 	let URLHostname = parsedURL.hostname;
 	let URLPathname = parsedURL.pathname;
 	let URLSearch = parsedURL.search;
-
 	if (URLPathname.charAt(URLPathname.length - 1) == '/') {
 		URLPathname = URLPathname.slice(0, -1);
 	}
 	URLPathname += url.pathname;
-
 	let newURL = `${URLProtocol}://${URLHostname}${URLPathname}${URLSearch}`;
 	let response = await fetch(newURL);
-
 	let newResponse = new Response(response.body, {
 		status: response.status,
 		statusText: response.statusText,
 		headers: response.headers
 	});
-
 	newResponse.headers.set('X-New-URL', newURL);
 	return newResponse;
 }
@@ -481,7 +461,6 @@ async function getSUB(api, request, 追加UA, userAgentHeader) {
 	} finally {
 		clearTimeout(timeout); 
 	}
-
 	const 订阅内容 = await ADD(newapi + 异常订阅); 
 	return [订阅内容, 订阅转换URLs];
 }
@@ -489,7 +468,6 @@ async function getSUB(api, request, 追加UA, userAgentHeader) {
 async function getUrl(request, targetUrl, 追加UA, userAgentHeader) {
 	const newHeaders = new Headers(request.headers);
 	newHeaders.set("User-Agent", `${atob('djJyYXlOLzYuNDU=')} cmliu/CF-Workers-SUB ${追加UA}(${userAgentHeader})`);
-
 	const modifiedRequest = new Request(targetUrl, {
 		method: request.method,
 		headers: newHeaders,
@@ -501,7 +479,6 @@ async function getUrl(request, targetUrl, 追加UA, userAgentHeader) {
 			validateCertificate: false
 		}
 	});
-
 	return fetch(modifiedRequest);
 }
 
@@ -514,7 +491,6 @@ function isValidBase64(str) {
 async function 迁移地址列表(env, txt = 'ADD.txt') {
 	const 旧数据 = await env.KV.get(`/${txt}`);
 	const 新数据 = await env.KV.get(txt);
-
 	if (旧数据 && !新数据) {
 		await env.KV.put(txt, 旧数据);
 		await env.KV.delete(`/${txt}`);
@@ -556,112 +532,56 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					<meta charset="utf-8">
 					<meta name="viewport" content="width=device-width, initial-scale=1">
 					<style>
-						body {
-							margin: 0;
-							padding: 15px; 
-							box-sizing: border-box;
-							font-size: 13px; 
-						}
-						.editor-container {
-							width: 100%;
-							max-width: 100%;
-							margin: 0 auto;
-						}
-						.editor {
-							width: 100%;
-							height: 300px; 
-							margin: 15px 0; 
-							padding: 10px; 
-							box-sizing: border-box;
-							border: 1px solid #ccc;
-							border-radius: 4px;
-							font-size: 13px;
-							line-height: 1.5;
-							overflow-y: auto;
-							resize: none;
-						}
-						.save-container {
-							margin-top: 8px; 
-							display: flex;
-							align-items: center;
-							gap: 10px; 
-						}
-						.save-btn, .back-btn {
-							padding: 6px 15px; 
-							color: white;
-							border: none;
-							border-radius: 4px;
-							cursor: pointer;
-						}
-						.save-btn {
-							background: #4CAF50;
-						}
-						.save-btn:hover {
-							background: #45a049;
-						}
-						.back-btn {
-							background: #666;
-						}
-						.back-btn:hover {
-							background: #555;
-						}
-						.save-status {
-							color: #666;
-						}
+						body { margin: 0; padding: 15px; box-sizing: border-box; font-size: 13px; }
+						.editor-container { width: 100%; max-width: 100%; margin: 0 auto; }
+						.editor { width: 100%; height: 300px; margin: 15px 0; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; line-height: 1.5; overflow-y: auto; resize: none; }
+						.save-container { margin-top: 8px; display: flex; align-items: center; gap: 10px; }
+						.save-btn, .back-btn { padding: 6px 15px; color: white; border: none; border-radius: 4px; cursor: pointer; }
+						.save-btn { background: #4CAF50; }
+						.save-btn:hover { background: #45a049; }
+						.save-status { color: #666; }
 					</style>
 					<script src="https://cdn.jsdelivr.net/npm/@keeex/qrcodejs-kx@1.0.2/qrcode.min.js"></script>
 				</head>
 				<body>
 					################################################################<br>
-					Subscribe / sub 订阅地址, 点击链接自动 <strong>复制订阅链接</strong> 并 <strong>生成订阅二维码</strong> <br>
+					<strong>全新分组安全订阅模式使用说明:</strong><br>
 					---------------------------------------------------------------<br>
-					自适应订阅地址:<br>
-					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/${mytoken}','qrcode_0')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/${mytoken}</a><br>
-					<div id="qrcode_0" style="margin: 10px 10px 10px 10px;"></div>
-					Base64订阅地址:<br>
-					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/${mytoken}?b64','qrcode_1')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/${mytoken}?b64</a><br>
-					<div id="qrcode_1" style="margin: 10px 10px 10px 10px;"></div>
-					clash订阅地址:<br>
-					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/${mytoken}?clash','qrcode_2')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/${mytoken}?clash</a><br>
-					<div id="qrcode_2" style="margin: 10px 10px 10px 10px;"></div>
-					singbox订阅地址:<br>
-					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/${mytoken}?sb','qrcode_3')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/${mytoken}?sb</a><br>
-					<div id="qrcode_3" style="margin: 10px 10px 10px 10px;"></div>
-					surge订阅地址:<br>
-					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/${mytoken}?surge','qrcode_4')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/${mytoken}?surge</a><br>
-					<div id="qrcode_4" style="margin: 10px 10px 10px 10px;"></div>
-					loon订阅地址:<br>
-					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/${mytoken}?loon','qrcode_5')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/${mytoken}?loon</a><br>
-					<div id="qrcode_5" style="margin: 10px 10px 10px 10px;"></div>
+					1. 在下方编辑器中, 使用 <code>[组名]</code> 或 <code>[组名:密码]</code> 格式来定义分组。<br>
+					2. <strong>发给用户的链接，必须带上您的访客TOKEN、分组名称，以及密码！</strong><br>
+					3. 为防止后台泄漏，千万不要直接把管理员TOKEN发给别人用哦！<br>
+					<br>
+					<strong>👉 您的安全访客 TOKEN (GUEST) 是：</strong><span style="color:red;font-weight:bold">${guest}</span><br>
+					<br>
+					<strong>👇 请复制以下格式发给用户（请自行将中文替换为您设置的组名和密码）：</strong><br>
+					---------------------------------------------------------------<br>
+					<strong>自适应订阅地址 (根据客户端自动返回合适格式):</strong><br>
+					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&group=在此填组名&pass=在此填密码','guest_0')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&group=在此填组名&pass=在此填密码</a><br>
+					<div id="guest_0" style="margin: 10px 10px 10px 10px;"></div>
 					
-					---------------------------------------------------------------<br>
-                    <strong>订阅使用说明:</strong><br>
-                    1. 在下方编辑器中, 使用 <code>[组名]</code> 或 <code>[组名:密码]</code> 格式来定义不同的订阅分组。<br>
-                    2. <strong>获取指定分组:</strong> 在订阅链接末尾加上 <code>&amp;group=组名</code> (如有密码加 <code>&amp;pass=密码</code>)<br>
-                    &nbsp;&nbsp;&nbsp;→ 例如无密码: <code>https://${url.hostname}/${mytoken}?clash&amp;group=<strong>分组A</strong></code><br>
-                    &nbsp;&nbsp;&nbsp;→ 例如有密码: <code>https://${url.hostname}/${mytoken}?clash&amp;group=<strong>分组B</strong>&amp;pass=<strong>您的密码</strong></code><br>
-                    3. <strong>获取总订阅:</strong> 在订阅链接末尾加上 <code>&amp;all=您的总订阅密码</code><br>
-                    &nbsp;&nbsp;&nbsp;→ (总订阅密码需在Cloudflare后台设置 <code>ALL_GROUPS_TOKEN</code> 环境变量)<br>
-                    4. <strong>注意:</strong> 为了安全, 管理员直接访问订阅链接 (不加 group 或 all) 将不会返回任何节点。<br>
-					&nbsp;&nbsp;<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">查看访客订阅∨</a></strong><br>
-					<div id="noticeContent" class="notice-content" style="display: none;">
-						---------------------------------------------------------------<br>
-						访客订阅只能使用订阅功能，无法查看配置页！<br>
-						GUEST（访客订阅TOKEN）: <strong>${guest}</strong><br>
-						---------------------------------------------------------------<br>
-						自适应订阅地址:<br>
-						<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}','guest_0')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}</a><br>
-						<div id="guest_0" style="margin: 10px 10px 10px 10px;"></div>
-					</div>
-					---------------------------------------------------------------<br>
-					################################################################<br>
-					订阅转换配置<br>
-					---------------------------------------------------------------<br>
-					SUBAPI（订阅转换后端）: <strong>${subProtocol}://${subConverter}</strong><br>
-					SUBCONFIG（订阅转换配置文件）: <strong>${subConfig}</strong><br>
+					<strong>Base64 普通订阅地址 (v2rayN / Shadowrocket 等):</strong><br>
+					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&b64&group=在此填组名&pass=在此填密码','guest_1')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&b64&group=在此填组名&pass=在此填密码</a><br>
+					<div id="guest_1" style="margin: 10px 10px 10px 10px;"></div>
+
+					<strong>Clash 订阅地址:</strong><br>
+					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&clash&group=在此填组名&pass=在此填密码','guest_2')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&clash&group=在此填组名&pass=在此填密码</a><br>
+					<div id="guest_2" style="margin: 10px 10px 10px 10px;"></div>
+
+					<strong>Singbox 订阅地址:</strong><br>
+					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&sb&group=在此填组名&pass=在此填密码','guest_3')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&sb&group=在此填组名&pass=在此填密码</a><br>
+					<div id="guest_3" style="margin: 10px 10px 10px 10px;"></div>
+
+					<strong>Surge 订阅地址:</strong><br>
+					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&surge&group=在此填组名&pass=在此填密码','guest_4')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&surge&group=在此填组名&pass=在此填密码</a><br>
+					<div id="guest_4" style="margin: 10px 10px 10px 10px;"></div>
+
+					<strong>Loon 订阅地址:</strong><br>
+					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&loon&group=在此填组名&pass=在此填密码','guest_5')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&loon&group=在此填组名&pass=在此填密码</a><br>
+					<div id="guest_5" style="margin: 10px 10px 10px 10px;"></div>
+
 					---------------------------------------------------------------<br>
 					################################################################<br>
-					${FileName} 汇聚订阅编辑: 
+					${FileName} 汇聚订阅编辑 (请使用 [组名:密码] 划分节点): 
 					<div class="editor-container">
 						${hasKV ? `
 						<textarea class="editor" 
@@ -674,11 +594,11 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 						` : '<p>请绑定 <strong>变量名称</strong> 为 <strong>KV</strong> 的KV命名空间</p>'}
 					</div>
 					<br>
-					<br>UA: <strong>${request.headers.get('User-Agent')}</strong>
+					<br>当前后台登录UA: <strong>${request.headers.get('User-Agent')}</strong>
 					<script>
 					function copyToClipboard(text, qrcode) {
 						navigator.clipboard.writeText(text).then(() => {
-							alert('已复制到剪贴板');
+							alert('已复制到剪贴板！请注意替换链接中的“在此填组名”和“在此填密码”。');
 						}).catch(err => {
 							console.error('复制失败:', err);
 						});
@@ -778,22 +698,6 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 							timer = setTimeout(saveContent, 5000);
 						});
 					}
-
-					function toggleNotice() {
-						const noticeContent = document.getElementById('noticeContent');
-						const noticeToggle = document.getElementById('noticeToggle');
-						if (noticeContent.style.display === 'none' || noticeContent.style.display === '') {
-							noticeContent.style.display = 'block';
-							noticeToggle.textContent = '隐藏访客订阅∧';
-						} else {
-							noticeContent.style.display = 'none';
-							noticeToggle.textContent = '查看访客订阅∨';
-						}
-					}
-			
-					document.addEventListener('DOMContentLoaded', () => {
-						document.getElementById('noticeContent').style.display = 'none';
-					});
 					</script>
 				</body>
 			</html>
