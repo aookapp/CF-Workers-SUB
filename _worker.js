@@ -330,23 +330,38 @@ async function nginx() {
 async function sendMessage(type, ip, add_data = "") {
 	if (BotToken !== '' && ChatID !== '') {
 		let msg = "";
-		const response = await fetch(`http://ip-api.com/json/${ip}?lang=zh-CN`);
-		if (response.status == 200) {
-			const ipInfo = await response.json();
-			msg = `${type}\nIP: ${ip}\n国家: ${ipInfo.country}\n<tg-spoiler>城市: ${ipInfo.city}\n组织: ${ipInfo.org}\nASN: ${ipInfo.as}\n${add_data}`;
-		} else {
-			msg = `${type}\nIP: ${ip}\n<tg-spoiler>${add_data}`;
+		
+		// 修复1：将参数里的 & 符号替换为全角 ＆，防止触发 Telegram 的 HTML 解析报错
+		let safe_add_data = add_data.replace(/&/g, '＆');
+
+		try {
+			// 修复2：增加 try-catch 保护，防止 ip-api 接口宕机/限流导致整个脚本崩溃
+			const response = await fetch(`http://ip-api.com/json/${ip}?lang=zh-CN`);
+			if (response.status == 200) {
+				const ipInfo = await response.json();
+				msg = `${type}\nIP: ${ip}\n国家: ${ipInfo.country}\n<tg-spoiler>城市: ${ipInfo.city}\n组织: ${ipInfo.org}\nASN: ${ipInfo.as}</tg-spoiler>\n${safe_add_data}`;
+			} else {
+				msg = `${type}\nIP: ${ip}\n${safe_add_data}`;
+			}
+		} catch (error) {
+			// 如果查 IP 失败，降级发送基础信息，保证依然能收到推送
+			msg = `${type}\nIP: ${ip}\n${safe_add_data}`;
 		}
 
 		let url = "https://api.telegram.org/bot" + BotToken + "/sendMessage?chat_id=" + ChatID + "&parse_mode=HTML&text=" + encodeURIComponent(msg);
-		return fetch(url, {
-			method: 'get',
-			headers: {
-				'Accept': 'text/html,application/xhtml+xml,application/xml;',
-				'Accept-Encoding': 'gzip, deflate, br',
-				'User-Agent': 'Mozilla/5.0 Chrome/90.0.4430.72'
-			}
-		});
+		
+		try {
+			return await fetch(url, {
+				method: 'GET',
+				headers: {
+					'Accept': 'text/html,application/xhtml+xml,application/xml;',
+					'Accept-Encoding': 'gzip, deflate, br',
+					'User-Agent': 'Mozilla/5.0 Chrome/90.0.4430.72'
+				}
+			});
+		} catch (e) {
+			console.error("TG Push Failed:", e);
+		}
 	}
 }
 
