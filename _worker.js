@@ -11,9 +11,9 @@ let total = 99;//TB
 let timestamp = 4102329600000;//2099-12-31
 
 //节点链接 + 订阅链接
-// 这里是新的分组格式示例，您可以直接在KV中按此格式编辑
+// 新的分组格式示例，支持密码：[组名:密码] 或 [组名]
 let MainData = `
-[group_A]
+[group_A:pass123]
 https://raw.githubusercontent.com/mfuu/v2ray/master/v2ray
 https://raw.githubusercontent.com/peasoft/NoMoreWalls/master/list_raw.txt
 
@@ -59,7 +59,6 @@ export default {
 		guestToken = env.GUESTTOKEN || env.GUEST || guestToken;
 		if (!guestToken) guestToken = await MD5MD5(mytoken);
 		const 访客订阅 = guestToken;
-		//console.log(`${fakeUserID}\n${fakeHostName}`); // 打印fakeID
 
 		let UD = Math.floor(((timestamp - Date.now()) / timestamp * total * 1099511627776) / 2);
 		total = total * 1099511627776;
@@ -77,13 +76,7 @@ export default {
 				},
 			});
 		} else {
-			// ############# START: 代码修改区域 #############
 
-			////////////////////////////////////////
-// ...
-
-			// 1. 【重要修复】将数据读取逻辑提前
-			// 无论什么请求，只要token有效，就立刻从KV或环境变量中加载链接数据
 			if (env.KV) {
 				await 迁移地址列表(env, 'LINK.txt');
 				MainData = await env.KV.get('LINK.txt') || MainData;
@@ -92,60 +85,53 @@ export default {
 				if (env.LINKSUB) urls = await ADD(env.LINKSUB);
 			}
 
-			// 2. 解析所有分组，为后续逻辑做准备
+			// 解析所有分组，为后续逻辑做准备
 			const subscriptionGroups = await parseGroupedSubscriptions(MainData);
 			let linksToProcess;
 
-			// ... 确保这是在数据加载（await env.KV.get...）之后 ...
-
-			// 3. 从URL中获取所需参数
+			// 从URL中获取所需参数
 			const groupName = url.searchParams.get('group');
+			const groupPass = url.searchParams.get('pass') || url.searchParams.get('pwd');
 			const allToken = url.searchParams.get('all');
 			const hasSubscriptionParams = url.searchParams.has('clash') || url.searchParams.has('sb') || url.searchParams.has('singbox') || url.searchParams.has('b64') || url.searchParams.has('base64') || url.searchParams.has('surge') || url.searchParams.has('quanx') || url.searchParams.has('loon');
 
-			// 4. 定义清晰的身份标识
-			// 检查是否为管理员身份（通过路径或URL参数判断）
+			// 定义清晰的身份标识
 			const isAdmin = (token === mytoken || url.pathname === '/' + mytoken);
-			// 检查是否为访客身份
 			const isGuest = (token === 访客订阅);
-			// 检查是否为尝试访问后台页面的请求
 			const isBackendRequest = (userAgent.includes('mozilla') && !hasSubscriptionParams);
 
-			// 5. 全新的、更严谨的请求分类处理逻辑
 			// 条件一：管理员访问后台页面
 			if (isAdmin && isBackendRequest) {
 				await sendMessage(`#编辑订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 				return await KV(request, env, 'LINK.txt', 访客订阅);
 			
-			// 条件二：请求分组订阅（管理员和访客都可以）
+			// 条件二：请求分组订阅（带密码校验功能）
 			} else if (groupName && subscriptionGroups.has(groupName)) {
-				linksToProcess = subscriptionGroups.get(groupName);
-				await sendMessage(`#获取分组订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `分组: ${groupName}\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+				const groupData = subscriptionGroups.get(groupName);
+				const expectedPassword = groupData.password;
 
-			// 条件三：请求受保护的总订阅（管理员和访客都可以）
+				// 如果分组设置了密码，且密码不匹配（管理员可以直接拉取免密测试）
+				if (expectedPassword && expectedPassword !== groupPass && !isAdmin) {
+					await sendMessage(`#密码错误拦截 ${FileName}`, request.headers.get('CF-Connecting-IP'), `尝试获取分组: ${groupName}\n输入密码: ${groupPass || "未输入"}\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}`);
+					return new Response('Access Denied. Incorrect group password.', { status: 403 });
+				}
+
+				linksToProcess = groupData.links;
+				await sendMessage(`#获取分组订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `分组: ${groupName}\n验证方式: ${isAdmin ? '管理员免密' : (expectedPassword ? '密码验证通过' : '无密码分组')}\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+
+			// 条件三：请求受保护的总订阅
 			} else if (!groupName && env.ALL_GROUPS_TOKEN && allToken === env.ALL_GROUPS_TOKEN) {
-				linksToProcess = subscriptionGroups.get('all');
+				linksToProcess = subscriptionGroups.get('all').links;
 				if (env.LINKSUB) { linksToProcess = linksToProcess.concat(await ADD(env.LINKSUB)); }
 				await sendMessage(`#获取总订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 
-			// 条件四：访客的默认订阅请求（无分组、无密码）
-			// 	} else if (isGuest && !groupName) {
-				// 	linksToProcess = subscriptionGroups.get('all');
-				// 	if (env.LINKSUB) { linksToProcess = linksToProcess.concat(await ADD(env.LINKSUB)); }
-				// 	await sendMessage(`#获取访客订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-			
-			// 条件五：其他所有情况全部拒绝
+			// 条件四：其他所有情况全部拒绝
 			} else {
 				await sendMessage(`#无效订阅拦截 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 				return new Response('Access Denied. Invalid subscription link or parameters.', { status: 403 });
 			}
 
-
-			
-			//////////////////////////////////////////////////
-			// 使用原始变量名，以减少对后续代码的改动
 			let 重新汇总所有链接 = linksToProcess;
-			// ############# END: 代码修改区域 #############
 
 			let 自建节点 = "";
 			let 订阅链接 = "";
@@ -176,7 +162,6 @@ export default {
 
 			let subConverterUrl;
 			let 订阅转换URL = `${url.origin}/${await MD5MD5(fakeToken)}?token=${fakeToken}`;
-			//console.log(订阅转换URL);
 			let req_data = MainData;
 
 			let 追加UA = 'v2rayn';
@@ -188,22 +173,18 @@ export default {
 			else if (url.searchParams.has('loon')) 追加UA = 'Loon';
 
 			const 请求订阅响应内容 = await getSUB(urls, request, 追加UA, userAgentHeader);
-			console.log(请求订阅响应内容);
 			req_data += 请求订阅响应内容[0].join('\n');
 			订阅转换URL += "|" + 请求订阅响应内容[1];
 
 			if (env.WARP) 订阅转换URL += "|" + (await ADD(env.WARP)).join("|");
-			//修复中文错误
+			
 			const utf8Encoder = new TextEncoder();
 			const encodedData = utf8Encoder.encode(req_data);
-			//const text = String.fromCharCode.apply(null, encodedData);
 			const utf8Decoder = new TextDecoder();
 			const text = utf8Decoder.decode(encodedData);
 
-			//去重
 			const uniqueLines = new Set(text.split('\n'));
 			const result = [...uniqueLines].join('\n');
-			//console.log(result);
 
 			let base64Data;
 			try {
@@ -237,7 +218,6 @@ export default {
 					headers: {
 						"content-type": "text/plain; charset=utf-8",
 						"Profile-Update-Interval": `${SUBUpdateTime}`,
-						//"Subscription-Userinfo": `upload=${UD}; download=${UD}; total=${total}; expire=${expire}`,
 					}
 				});
 			} else if (订阅格式 == 'clash') {
@@ -251,7 +231,7 @@ export default {
 			} else if (订阅格式 == 'loon') {
 				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=loon&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false`;
 			}
-			//console.log(订阅转换URL);
+
 			try {
 				const subConverterResponse = await fetch(subConverterUrl);
 
@@ -260,10 +240,8 @@ export default {
 						headers: {
 							"content-type": "text/plain; charset=utf-8",
 							"Profile-Update-Interval": `${SUBUpdateTime}`,
-							//"Subscription-Userinfo": `upload=${UD}; download=${UD}; total=${total}; expire=${expire}`,
 						}
 					});
-					//throw new Error(`Error fetching subConverterUrl: ${subConverterResponse.status} ${subConverterResponse.statusText}`);
 				}
 				let subConverterContent = await subConverterResponse.text();
 				if (订阅格式 == 'clash') subConverterContent = await clashFix(subConverterContent);
@@ -272,8 +250,6 @@ export default {
 						"Content-Disposition": `attachment; filename*=utf-8''${encodeURIComponent(FileName)}`,
 						"content-type": "text/plain; charset=utf-8",
 						"Profile-Update-Interval": `${SUBUpdateTime}`,
-						//"Subscription-Userinfo": `upload=${UD}; download=${UD}; total=${total}; expire=${expire}`,
-
 					},
 				});
 			} catch (error) {
@@ -281,7 +257,6 @@ export default {
 					headers: {
 						"content-type": "text/plain; charset=utf-8",
 						"Profile-Update-Interval": `${SUBUpdateTime}`,
-						//"Subscription-Userinfo": `upload=${UD}; download=${UD}; total=${total}; expire=${expire}`,
 					}
 				});
 			}
@@ -290,51 +265,46 @@ export default {
 };
 
 async function ADD(envadd) {
-	var addtext = envadd.replace(/[	"'|\r\n]+/g, ',').replace(/,+/g, ',');	// 将空格、双引号、单引号和换行符替换为逗号
-	//console.log(addtext);
+	var addtext = envadd.replace(/[	"'|\r\n]+/g, ',').replace(/,+/g, ',');	
 	if (addtext.charAt(0) == ',') addtext = addtext.slice(1);
 	if (addtext.charAt(addtext.length - 1) == ',') addtext = addtext.slice(0, addtext.length - 1);
 	const add = addtext.split(',');
-	//console.log(add);
 	return add;
 }
 
-// ############# START: 新增函数 #############
 /**
- * 解析带有分组标记的订阅链接文本
+ * 解析带有分组和密码标记的订阅链接文本
  * @param {string} rawData 包含分组信息的原始文本
- * @returns {Map<string, string[]>} 返回一个Map，键是组名，值是该组的链接数组
+ * @returns {Map<string, Object>} 返回一个Map，包含分组链接和对应密码
  */
 async function parseGroupedSubscriptions(rawData) {
     const groups = new Map();
     let currentGroup = null;
-    const allLinks = []; // 用于存储所有链接，以兼容默认行为
+    const allLinks = [];
 
     const lines = rawData.split('\n').map(line => line.trim()).filter(line => line !== '' && !line.startsWith('#'));
 
     for (const line of lines) {
-        // 匹配 [group_name] 格式
-        const groupMatch = line.match(/^\[(.+)\]$/);
+        // 匹配 [group_name] 或者 [group_name:password] 格式
+        const groupMatch = line.match(/^\[([^:]+)(?::(.*))?\]$/);
         if (groupMatch) {
             currentGroup = groupMatch[1].trim();
+            const password = groupMatch[2] ? groupMatch[2].trim() : null;
             if (!groups.has(currentGroup)) {
-                groups.set(currentGroup, []);
+                groups.set(currentGroup, { links: [], password: password });
             }
-        } else if (line.includes('://')) { // 简单验证是否为链接
-            allLinks.push(line); // 为默认行为准备，将链接添加到“全部”列表中
-            if (currentGroup) {
-                // 如果当前处于一个分组内，将链接添加到对应分组
-                groups.get(currentGroup).push(line);
+        } else if (line.includes('://')) {
+            allLinks.push(line);
+            if (currentGroup && groups.has(currentGroup)) {
+                groups.get(currentGroup).links.push(line);
             }
         }
     }
     
-    // 为了向后兼容，创建一个 'all' 组，包含所有解析到的链接
-    groups.set('all', allLinks);
+    // 为了向后兼容，创建一个 'all' 组
+    groups.set('all', { links: allLinks, password: null });
     return groups;
 }
-// ############# END: 新增函数 #############
-
 
 async function nginx() {
 	const text = `
@@ -439,153 +409,103 @@ async function proxyURL(proxyURL, url) {
 	const URLs = await ADD(proxyURL);
 	const fullURL = URLs[Math.floor(Math.random() * URLs.length)];
 
-	// 解析目标 URL
 	let parsedURL = new URL(fullURL);
-	console.log(parsedURL);
-	// 提取并可能修改 URL 组件
 	let URLProtocol = parsedURL.protocol.slice(0, -1) || 'https';
 	let URLHostname = parsedURL.hostname;
 	let URLPathname = parsedURL.pathname;
 	let URLSearch = parsedURL.search;
 
-	// 处理 pathname
 	if (URLPathname.charAt(URLPathname.length - 1) == '/') {
 		URLPathname = URLPathname.slice(0, -1);
 	}
 	URLPathname += url.pathname;
 
-	// 构建新的 URL
 	let newURL = `${URLProtocol}://${URLHostname}${URLPathname}${URLSearch}`;
-
-	// 反向代理请求
 	let response = await fetch(newURL);
 
-	// 创建新的响应
 	let newResponse = new Response(response.body, {
 		status: response.status,
 		statusText: response.statusText,
 		headers: response.headers
 	});
 
-	// 添加自定义头部，包含 URL 信息
-	//newResponse.headers.set('X-Proxied-By', 'Cloudflare Worker');
-	//newResponse.headers.set('X-Original-URL', fullURL);
 	newResponse.headers.set('X-New-URL', newURL);
-
 	return newResponse;
 }
 
 async function getSUB(api, request, 追加UA, userAgentHeader) {
 	if (!api || api.length === 0) {
 		return [];
-	} else api = [...new Set(api)]; // 去重
+	} else api = [...new Set(api)]; 
 	let newapi = "";
 	let 订阅转换URLs = "";
 	let 异常订阅 = "";
-	const controller = new AbortController(); // 创建一个AbortController实例，用于取消请求
+	const controller = new AbortController();
 	const timeout = setTimeout(() => {
-		controller.abort(); // 2秒后取消所有请求
+		controller.abort();
 	}, 2000);
 
 	try {
-		// 使用Promise.allSettled等待所有API请求完成，无论成功或失败
 		const responses = await Promise.allSettled(api.map(apiUrl => getUrl(request, apiUrl, 追加UA, userAgentHeader).then(response => response.ok ? response.text() : Promise.reject(response))));
 
-		// 遍历所有响应
 		const modifiedResponses = responses.map((response, index) => {
-			// 检查是否请求成功
 			if (response.status === 'rejected') {
 				const reason = response.reason;
 				if (reason && reason.name === 'AbortError') {
-					return {
-						status: '超时',
-						value: null,
-						apiUrl: api[index] // 将原始的apiUrl添加到返回对象中
-					};
+					return { status: '超时', value: null, apiUrl: api[index] };
 				}
-				console.error(`请求失败: ${api[index]}, 错误信息: ${reason.status} ${reason.statusText}`);
-				return {
-					status: '请求失败',
-					value: null,
-					apiUrl: api[index] // 将原始的apiUrl添加到返回对象中
-				};
+				return { status: '请求失败', value: null, apiUrl: api[index] };
 			}
-			return {
-				status: response.status,
-				value: response.value,
-				apiUrl: api[index] // 将原始的apiUrl添加到返回对象中
-			};
+			return { status: response.status, value: response.value, apiUrl: api[index] };
 		});
 
-		console.log(modifiedResponses); // 输出修改后的响应数组
-
 		for (const response of modifiedResponses) {
-			// 检查响应状态是否为'fulfilled'
 			if (response.status === 'fulfilled') {
-				const content = await response.value || 'null'; // 获取响应的内容
+				const content = await response.value || 'null';
 				if (content.includes('proxies:')) {
-					//console.log('Clash订阅: ' + response.apiUrl);
-					订阅转换URLs += "|" + response.apiUrl; // Clash 配置
+					订阅转换URLs += "|" + response.apiUrl; 
 				} else if (content.includes('outbounds"') && content.includes('inbounds"')) {
-					//console.log('Singbox订阅: ' + response.apiUrl);
-					订阅转换URLs += "|" + response.apiUrl; // Singbox 配置
+					订阅转换URLs += "|" + response.apiUrl; 
 				} else if (content.includes('://')) {
-					//console.log('明文订阅: ' + response.apiUrl);
-					newapi += content + '\n'; // 追加内容
+					newapi += content + '\n'; 
 				} else if (isValidBase64(content)) {
-					//console.log('Base64订阅: ' + response.apiUrl);
-					newapi += base64Decode(content) + '\n'; // 解码并追加内容
+					newapi += base64Decode(content) + '\n'; 
 				} else {
 					const 异常订阅LINK = `trojan://CMLiussss@127.0.0.1:8888?security=tls&allowInsecure=1&type=tcp&headerType=none#%E5%BC%82%E5%B8%B8%E8%AE%A2%E9%98%85%20${response.apiUrl.split('://')[1].split('/')[0]}`;
-					console.log('异常订阅: ' + 异常订阅LINK);
 					异常订阅 += `${异常订阅LINK}\n`;
 				}
 			}
 		}
 	} catch (error) {
-		console.error(error); // 捕获并输出错误信息
+		console.error(error); 
 	} finally {
-		clearTimeout(timeout); // 清除定时器
+		clearTimeout(timeout); 
 	}
 
-	const 订阅内容 = await ADD(newapi + 异常订阅); // 将处理后的内容转换为数组
-	// 返回处理后的结果
+	const 订阅内容 = await ADD(newapi + 异常订阅); 
 	return [订阅内容, 订阅转换URLs];
 }
 
 async function getUrl(request, targetUrl, 追加UA, userAgentHeader) {
-	// 设置自定义 User-Agent
 	const newHeaders = new Headers(request.headers);
 	newHeaders.set("User-Agent", `${atob('djJyYXlOLzYuNDU=')} cmliu/CF-Workers-SUB ${追加UA}(${userAgentHeader})`);
 
-	// 构建新的请求对象
 	const modifiedRequest = new Request(targetUrl, {
 		method: request.method,
 		headers: newHeaders,
 		body: request.method === "GET" ? null : request.body,
 		redirect: "follow",
 		cf: {
-			// 忽略SSL证书验证
 			insecureSkipVerify: true,
-			// 允许自签名证书
 			allowUntrusted: true,
-			// 禁用证书验证
 			validateCertificate: false
 		}
 	});
 
-	// 输出请求的详细信息
-	console.log(`请求URL: ${targetUrl}`);
-	console.log(`请求头: ${JSON.stringify([...newHeaders])}`);
-	console.log(`请求方法: ${request.method}`);
-	console.log(`请求体: ${request.method === "GET" ? null : request.body}`);
-
-	// 发送请求并返回响应
 	return fetch(modifiedRequest);
 }
 
 function isValidBase64(str) {
-	// 先移除所有空白字符(空格、换行、回车等)
 	const cleanStr = str.replace(/\s/g, '');
 	const base64Regex = /^[A-Za-z0-9+/=]+$/;
 	return base64Regex.test(cleanStr);
@@ -596,9 +516,7 @@ async function 迁移地址列表(env, txt = 'ADD.txt') {
 	const 新数据 = await env.KV.get(txt);
 
 	if (旧数据 && !新数据) {
-		// 写入新位置
 		await env.KV.put(txt, 旧数据);
-		// 删除旧数据
 		await env.KV.delete(`/${txt}`);
 		return true;
 	}
@@ -608,7 +526,6 @@ async function 迁移地址列表(env, txt = 'ADD.txt') {
 async function KV(request, env, txt = 'ADD.txt', guest) {
 	const url = new URL(request.url);
 	try {
-		// POST请求处理
 		if (request.method === "POST") {
 			if (!env.KV) return new Response("未绑定KV空间", { status: 400 });
 			try {
@@ -616,12 +533,10 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 				await env.KV.put(txt, content);
 				return new Response("保存成功");
 			} catch (error) {
-				console.error('保存KV时发生错误:', error);
 				return new Response("保存失败: " + error.message, { status: 500 });
 			}
 		}
 
-		// GET请求部分
 		let content = '';
 		let hasKV = !!env.KV;
 
@@ -629,7 +544,6 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 			try {
 				content = await env.KV.get(txt) || '';
 			} catch (error) {
-				console.error('读取KV时发生错误:', error);
 				content = '读取数据时发生错误: ' + error.message;
 			}
 		}
@@ -644,9 +558,9 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					<style>
 						body {
 							margin: 0;
-							padding: 15px; /* 调整padding */
+							padding: 15px; 
 							box-sizing: border-box;
-							font-size: 13px; /* 设置全局字体大小 */
+							font-size: 13px; 
 						}
 						.editor-container {
 							width: 100%;
@@ -655,9 +569,9 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 						}
 						.editor {
 							width: 100%;
-							height: 300px; /* 调整高度 */
-							margin: 15px 0; /* 调整margin */
-							padding: 10px; /* 调整padding */
+							height: 300px; 
+							margin: 15px 0; 
+							padding: 10px; 
 							box-sizing: border-box;
 							border: 1px solid #ccc;
 							border-radius: 4px;
@@ -667,13 +581,13 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 							resize: none;
 						}
 						.save-container {
-							margin-top: 8px; /* 调整margin */
+							margin-top: 8px; 
 							display: flex;
 							align-items: center;
-							gap: 10px; /* 调整gap */
+							gap: 10px; 
 						}
 						.save-btn, .back-btn {
-							padding: 6px 15px; /* 调整padding */
+							padding: 6px 15px; 
 							color: white;
 							border: none;
 							border-radius: 4px;
@@ -722,12 +636,12 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					
 					---------------------------------------------------------------<br>
                     <strong>订阅使用说明:</strong><br>
-                    1. 在下方编辑器中, 使用 <code>[组名]</code> 格式来定义不同的订阅分组。<br>
-                    2. <strong>获取指定分组:</strong> 在订阅链接末尾加上 <code>&amp;group=组名</code><br>
-                    &nbsp;&nbsp;&nbsp;→ 例如: <code>https://${url.hostname}/${mytoken}?clash&amp;group=<strong>某个组名</strong></code><br>
+                    1. 在下方编辑器中, 使用 <code>[组名]</code> 或 <code>[组名:密码]</code> 格式来定义不同的订阅分组。<br>
+                    2. <strong>获取指定分组:</strong> 在订阅链接末尾加上 <code>&amp;group=组名</code> (如有密码加 <code>&amp;pass=密码</code>)<br>
+                    &nbsp;&nbsp;&nbsp;→ 例如无密码: <code>https://${url.hostname}/${mytoken}?clash&amp;group=<strong>分组A</strong></code><br>
+                    &nbsp;&nbsp;&nbsp;→ 例如有密码: <code>https://${url.hostname}/${mytoken}?clash&amp;group=<strong>分组B</strong>&amp;pass=<strong>您的密码</strong></code><br>
                     3. <strong>获取总订阅:</strong> 在订阅链接末尾加上 <code>&amp;all=您的总订阅密码</code><br>
                     &nbsp;&nbsp;&nbsp;→ (总订阅密码需在Cloudflare后台设置 <code>ALL_GROUPS_TOKEN</code> 环境变量)<br>
-                    &nbsp;&nbsp;&nbsp;→ 例如: <code>https://${url.hostname}/${mytoken}?clash&amp;all=<strong>您的密码</strong></code><br>
                     4. <strong>注意:</strong> 为了安全, 管理员直接访问订阅链接 (不加 group 或 all) 将不会返回任何节点。<br>
 					&nbsp;&nbsp;<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">查看访客订阅∨</a></strong><br>
 					<div id="noticeContent" class="notice-content" style="display: none;">
@@ -738,21 +652,6 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 						自适应订阅地址:<br>
 						<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}','guest_0')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}</a><br>
 						<div id="guest_0" style="margin: 10px 10px 10px 10px;"></div>
-						Base64订阅地址:<br>
-						<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&b64','guest_1')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&b64</a><br>
-						<div id="guest_1" style="margin: 10px 10px 10px 10px;"></div>
-						clash订阅地址:<br>
-						<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&clash','guest_2')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&clash</a><br>
-						<div id="guest_2" style="margin: 10px 10px 10px 10px;"></div>
-						singbox订阅地址:<br>
-						<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&sb','guest_3')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&sb</a><br>
-						<div id="guest_3" style="margin: 10px 10px 10px 10px;"></div>
-						surge订阅地址:<br>
-						<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&surge','guest_4')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&surge</a><br>
-						<div id="guest_4" style="margin: 10px 10px 10px 10px;"></div>
-						loon订阅地址:<br>
-						<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&loon','guest_5')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&loon</a><br>
-						<div id="guest_5" style="margin: 10px 10px 10px 10px;"></div>
 					</div>
 					---------------------------------------------------------------<br>
 					################################################################<br>
@@ -766,7 +665,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					<div class="editor-container">
 						${hasKV ? `
 						<textarea class="editor" 
-							placeholder="${decodeURIComponent(atob('TElOSyVFNyVBNCVCQSVFNCVCRSU4QiVFRiVCQyU4OCVFNCVCOCU4MCVFOCVBMSU4QyVFNCVCOCU4MCVFNCVCOCVBQSVFOCU4QSU4MiVFNyU4MiVCOSVFOSU5MyVCRSVFNiU4RSVBNSVFNSU4RCVCMyVFNSU4RiVBRiVFRiVCQyU4OSVFRiVCQyU5QQp2bGVzcyUzQSUyRiUyRjI0NmFhNzk1LTA2MzctNGY0Yy04ZjY0LTJjOGZiMjRjMWJhZCU0MDEyNy4wLjAuMSUzQTEyMzQlM0ZlbmNyeXB0aW9uJTNEbm9uZSUyNnNlY3VyaXR5JTNEdGxzJTI2c25pJTNEVEcuQ01MaXVzc3NzLmxvc2V5b3VyaXAuY29tJTI2YWxsb3dJbnNlY3VyZSUzRDElMjZ0eXBlJTNEd3MlMjZob3N0JTNEVEcuQ01MaXVzc3NzLmxvc2V5b3VyaXAuY29tJTI2cGF0aCUzRCUyNTJGJTI1M0ZlZCUyNTNEMjU2MCUyM0NGbmF0CnRyb2phbiUzQSUyRiUyRmFhNmRkZDJmLWQxY2YtNGE1Mi1iYTFiLTI2NDBjNDFhNzg1NiU0MDIxOC4xOTAuMjMwLjIwNyUzQTQxMjg4JTNGc2VjdXJpdHklM0R0bHMlMjZzbmklM0RoazEyLmJpbGliaWxpLmNvbSUyNmFsbG93SW5zZWN1cmUlM0QxJTI2dHlwZSUzRHRjcCUyNmhlYWRlclR5cGUlM0Rub25lJTIzSEsKc3MlM0ElMkYlMkZZMmhoWTJoaE1qQXRhV1YwWmkxd2IyeDVNVE13TlRveVJYUlFjVzQyU0ZscVZVNWpTRzlvVEdaVmNFWlJkMjVtYWtORFVUVnRhREZ0U21SRlRVTkNkV04xVjFvNVVERjFaR3RTUzBodVZuaDFielUxYXpGTFdIb3lSbTgyYW5KbmRERTRWelkyYjNCMGVURmxOR0p0TVdwNlprTm1RbUklMjUzRCU0MDg0LjE5LjMxLjYzJTNBNTA4NDElMjNERQoKCiVFOCVBRSVBMiVFOSU5OCU4NSVFOSU5MyVCRSVFNiU4RSVBNSVFNyVBNCVCQSVFNCVCRSU4QiVFRiVCQyU4OCVFNCVCOCU4MCVFOCVBMSU4QyVFNCVCOCU4MCVFNiU5RCVBMSVFOCVBRSVBMiVFOSU5OCU4NSVFOSU5MyVCRSVFNiU4RSVBNSVFNSU4RCVCMyVFNSU4RiVBRiVFRiVCQyU4OSVFRiVCQyU5QQpodHRwcyUzQSUyRiUyRnN1Yi54Zi5mcmVlLmhyJTJGYXV0bw=='))}"
+							placeholder="支持带密码分组，格式示例：\n[分组A]\nhttps://...\n\n[分组B:yourpassword]\nhttps://..."
 							id="content">${content}</textarea>
 						<div class="save-container">
 							<button class="save-btn" onclick="saveContent(this)">保存</button>
@@ -775,9 +674,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 						` : '<p>请绑定 <strong>变量名称</strong> 为 <strong>KV</strong> 的KV命名空间</p>'}
 					</div>
 					<br>
-					################################################################<br>
-					${decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tJTNDYnIlM0UKZ2l0aHViJTIwJUU5JUExJUI5JUU3JTlCJUFFJUU1JTlDJUIwJUU1JTlEJTgwJTIwU3RhciFTdGFyIVN0YXIhISElM0NiciUzRQolM0NhJTIwaHJlZiUzRCUyN2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRmNtbGl1JTJGQ0YtV29ya2Vycy1TVUIlMjclM0VodHRwcyUzQSUyRiUyRmdpdGh1Yi5jb20lMkZjbWxpdSUyRkNGLVdvcmtlcnMtU1VCJTNDJTJGYSUzRSUzQ2JyJTNFCi0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLSUzQ2JyJTNFCiUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMyUyMw=='))}
-					<br><br>UA: <strong>${request.headers.get('User-Agent')}</strong>
+					<br>UA: <strong>${request.headers.get('User-Agent')}</strong>
 					<script>
 					function copyToClipboard(text, qrcode) {
 						navigator.clipboard.writeText(text).then(() => {
@@ -789,12 +686,12 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 						qrcodeDiv.innerHTML = '';
 						new QRCode(qrcodeDiv, {
 							text: text,
-							width: 220, // 调整宽度
-							height: 220, // 调整高度
-							colorDark: "#000000", // 二维码颜色
-							colorLight: "#ffffff", // 背景颜色
-							correctLevel: QRCode.CorrectLevel.Q, // 设置纠错级别
-							scale: 1 // 调整像素颗粒度
+							width: 220, 
+							height: 220, 
+							colorDark: "#000000", 
+							colorLight: "#ffffff", 
+							correctLevel: QRCode.CorrectLevel.Q, 
+							scale: 1 
 						});
 					}
 						
@@ -802,12 +699,6 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 						let timer;
 						const textarea = document.getElementById('content');
 						const originalContent = textarea.value;
-		
-						function goBack() {
-							const currentUrl = window.location.href;
-							const parentUrl = currentUrl.substring(0, currentUrl.lastIndexOf('/'));
-							window.location.href = parentUrl;
-						}
 		
 						function replaceFullwidthColon() {
 							const text = textarea.value;
@@ -819,34 +710,17 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 								const updateButtonText = (step) => {
 									button.textContent = \`保存中: \${step}\`;
 								};
-								// 检测是否为iOS设备
 								const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-								
-								// 仅在非iOS设备上执行replaceFullwidthColon
 								if (!isIOS) {
 									replaceFullwidthColon();
 								}
 								updateButtonText('开始保存');
 								button.disabled = true;
 
-								// 获取textarea内容和原始内容
 								const textarea = document.getElementById('content');
-								if (!textarea) {
-									throw new Error('找不到文本编辑区域');
-								}
+								let newContent = textarea.value || '';
+								let originalContent = textarea.defaultValue || '';
 
-								updateButtonText('获取内容');
-								let newContent;
-								let originalContent;
-								try {
-									newContent = textarea.value || '';
-									originalContent = textarea.defaultValue || '';
-								} catch (e) {
-									console.error('获取内容错误:', e);
-									throw new Error('无法获取编辑内容');
-								}
-
-								updateButtonText('准备状态更新函数');
 								const updateStatus = (message, isError = false) => {
 									const statusElem = document.getElementById('saveStatus');
 									if (statusElem) {
@@ -855,14 +729,12 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 									}
 								};
 
-								updateButtonText('准备按钮重置函数');
 								const resetButton = () => {
 									button.textContent = '保存';
 									button.disabled = false;
 								};
 
 								if (newContent !== originalContent) {
-									updateButtonText('发送保存请求');
 									fetch(window.location.href, {
 										method: 'POST',
 										body: newContent,
@@ -872,30 +744,24 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 										cache: 'no-cache'
 									})
 									.then(response => {
-										updateButtonText('检查响应状态');
 										if (!response.ok) {
 											throw new Error(\`HTTP error! status: \${response.status}\`);
 										}
-										updateButtonText('更新保存状态');
 										const now = new Date().toLocaleString();
 										document.title = \`编辑已保存 \${now}\`;
 										updateStatus(\`已保存 \${now}\`);
 									})
 									.catch(error => {
-										updateButtonText('处理错误');
-										console.error('Save error:', error);
 										updateStatus(\`保存失败: \${error.message}\`, true);
 									})
 									.finally(() => {
 										resetButton();
 									});
 								} else {
-									updateButtonText('检查内容变化');
 									updateStatus('内容未变化');
 									resetButton();
 								}
 							} catch (error) {
-								console.error('保存过程出错:', error);
 								button.textContent = '保存';
 								button.disabled = false;
 								const statusElem = document.getElementById('saveStatus');
@@ -925,7 +791,6 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 						}
 					}
 			
-					// 初始化 noticeContent 的 display 属性
 					document.addEventListener('DOMContentLoaded', () => {
 						document.getElementById('noticeContent').style.display = 'none';
 					});
@@ -938,19 +803,10 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 			headers: { "Content-Type": "text/html;charset=utf-8" }
 		});
 	} catch (error) {
-		console.error('处理请求时发生错误:', error);
 		return new Response("服务器错误: " + error.message, {
 			status: 500,
 			headers: { "Content-Type": "text/plain;charset=utf-8" }
 		});
 	}
-
 }
-
-
-
-
-
-
-
-
+}
