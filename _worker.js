@@ -19,10 +19,10 @@ https://raw.githubusercontent.com/peasoft/NoMoreWalls/master/list_raw.txt
 [group_B]
 https://raw.githubusercontent.com/ermaozi/get_subscribe/main/subscribe/v2ray.txt
 
-
 [all_in_one]
 https://raw.githubusercontent.com/mahdibland/SSAggregator/master/sub/airport_sub_merge.txt
 https://raw.githubusercontent.com/mahdibland/SSAggregator/master/sub/sub_merge.txt
+https://raw.githubusercontent.com/Pawdroid/Free-servers/refs/heads/main/sub
 `
 
 let urls = [];
@@ -37,7 +37,6 @@ export default {
 		const url = new URL(request.url);
 		const token = url.searchParams.get('token');
 		
-		// 使用局部变量防止高并发污染
 		let currentToken = env.TOKEN || mytoken;
 		let currentBotToken = env.TGTOKEN || BotToken;
 		let currentChatID = env.TGID || ChatID;
@@ -85,7 +84,6 @@ export default {
 				if (env.LINKSUB) currentUrls = currentUrls.concat(await ADD(env.LINKSUB));
 			}
 
-			// 完美解析分组并支持 Base64 / 订阅链接 混填
 			const subscriptionGroups = await parseGroupedSubscriptions(currentMainData);
 			let linksToProcess = [];
 
@@ -102,7 +100,6 @@ export default {
 			if (isBackendRequest) {
 				await sendMessage(currentBotToken, currentChatID, `#编辑订阅页面登录 ${currentFileName}`, request.headers.get('CF-Connecting-IP'), `身份: 管理员\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}`);
 				return await KV(request, env, 'LINK.txt', 访客订阅, currentSubProtocol, currentSubConverter, currentSubConfig, currentFileName, currentToken);
-			
 			} else if (groupName && subscriptionGroups.has(groupName)) {
 				const groupData = subscriptionGroups.get(groupName);
 				const expectedPassword = groupData.password;
@@ -115,18 +112,15 @@ export default {
 				linksToProcess = groupData.links;
 				const 验证方式 = isAdmin ? '管理员免密' : (expectedPassword ? '密码验证通过' : '无密码分组');
 				await sendMessage(currentBotToken, currentChatID, `#拉取成功 ${currentFileName}`, request.headers.get('CF-Connecting-IP'), `身份: ${身份标签}\n获取分组: ${groupName}\n验证方式: ${验证方式}\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-
 			} else if (!groupName && env.ALL_GROUPS_TOKEN && allToken === env.ALL_GROUPS_TOKEN) {
 				linksToProcess = subscriptionGroups.get('all').links;
 				if (env.LINKSUB) linksToProcess = linksToProcess.concat(await ADD(env.LINKSUB)); 
 				await sendMessage(currentBotToken, currentChatID, `#总订阅拉取成功 ${currentFileName}`, request.headers.get('CF-Connecting-IP'), `身份: ${身份标签}\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-
 			} else {
 				if(!isAdmin) {
 					await sendMessage(currentBotToken, currentChatID, `#无效订阅拦截 ${currentFileName}`, request.headers.get('CF-Connecting-IP'), `身份: ${身份标签}\n原因: 缺失分组参数或参数错误\n<tg-spoiler>UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 					return new Response('Access Denied. Invalid subscription link or parameters. Please check group and pass.', { status: 403 });
 				} else {
-					// 管理员未指定分组时，默认拉取全部
 					linksToProcess = subscriptionGroups.get('all').links;
 				}
 			}
@@ -175,34 +169,20 @@ export default {
 			订阅转换URL += "|" + 请求订阅响应内容[1];
 
 			if (env.WARP) 订阅转换URL += "|" + (await ADD(env.WARP)).join("|");
-			const utf8Encoder = new TextEncoder();
-			const encodedData = utf8Encoder.encode(req_data);
-			const utf8Decoder = new TextDecoder();
-			const text = utf8Decoder.decode(encodedData);
-			const uniqueLines = new Set(text.split('\n'));
+			const uniqueLines = new Set(req_data.split('\n').map(line => line.trim()).filter(line => line !== ''));
 			const result = [...uniqueLines].join('\n');
 
+			// 完美修复中文节点 Base64 编码崩溃问题
 			let base64Data;
 			try {
-				base64Data = btoa(result);
-			} catch (e) {
-				function encodeBase64(data) {
-					const binary = new TextEncoder().encode(data);
-					let base64 = '';
-					const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-					for (let i = 0; i < binary.length; i += 3) {
-						const byte1 = binary[i];
-						const byte2 = binary[i + 1] || 0;
-						const byte3 = binary[i + 2] || 0;
-						base64 += chars[byte1 >> 2];
-						base64 += chars[((byte1 & 3) << 4) | (byte2 >> 4)];
-						base64 += chars[((byte2 & 15) << 2) | (byte3 >> 6)];
-						base64 += chars[byte3 & 63];
-					}
-					const padding = 3 - (binary.length % 3 || 3);
-					return base64.slice(0, base64.length - padding) + '=='.slice(0, padding);
+				const bytes = new TextEncoder().encode(result);
+				let binary = '';
+				for (let i = 0; i < bytes.byteLength; i++) {
+					binary += String.fromCharCode(bytes[i]);
 				}
-				base64Data = encodeBase64(result.replace(/\u0026/g, '&'))
+				base64Data = btoa(binary);
+			} catch (e) {
+				base64Data = "";
 			}
 
 			if (订阅格式 == 'base64' || token == fakeToken) {
@@ -263,14 +243,10 @@ async function ADD(envadd) {
 	return add;
 }
 
-/**
- * 修复版：完美解析分组并原生支持混填 Base64 / 订阅链接 / 明文节点
- */
 async function parseGroupedSubscriptions(rawData) {
     const groups = new Map();
     let currentGroup = null;
     const allLinks = [];
-
     const lines = rawData.split('\n');
 
     for (let line of lines) {
@@ -290,7 +266,6 @@ async function parseGroupedSubscriptions(rawData) {
                 groups.get(currentGroup).links.push(line);
             }
         } else if (isValidBase64(line)) {
-            // 解析 Base64，如果是多行节点，自动切分并分配给当前组
             let decoded = base64Decode(line);
             let decodedLines = decoded.split('\n');
             for(let dl of decodedLines){
@@ -313,16 +288,8 @@ async function nginx() {
 	return `
 	<!DOCTYPE html>
 	<html>
-	<head>
-	<title>Welcome to nginx!</title>
-	<style>
-		body { width: 35em; margin: 0 auto; font-family: Tahoma, Verdana, Arial, sans-serif; }
-	</style>
-	</head>
-	<body>
-	<h1>Welcome to nginx!</h1>
-	<p>If you see this page, the nginx web server is successfully installed and working.</p>
-	</body>
+	<head><title>Welcome to nginx!</title><style>body { width: 35em; margin: 0 auto; font-family: Tahoma, Verdana, Arial, sans-serif; }</style></head>
+	<body><h1>Welcome to nginx!</h1><p>If you see this page, the nginx web server is successfully installed and working.</p></body>
 	</html>
 	`;
 }
@@ -343,20 +310,14 @@ async function sendMessage(botToken, chatID, type, ip, add_data = "") {
 			msg = `${type}\nIP: ${ip}\n${safe_add_data}`;
 		}
 		let url = "https://api.telegram.org/bot" + botToken + "/sendMessage?chat_id=" + chatID + "&parse_mode=HTML&text=" + encodeURIComponent(msg);
-		try {
-			return await fetch(url, { method: 'get' });
-		} catch (e) {
-			console.error("Telegram Push Error: ", e);
-		}
+		try { return await fetch(url, { method: 'get' }); } catch (e) { }
 	}
 }
 
-// 修复: 健壮的 base64 验证
 function isValidBase64(str) {
 	const cleanStr = str.replace(/\s/g, '');
-	if(cleanStr.length % 4 !== 0 || cleanStr.length === 0) return false;
-	const base64Regex = /^[A-Za-z0-9+/]+={0,2}$/;
-	return base64Regex.test(cleanStr);
+	if(cleanStr.length === 0 || cleanStr.length % 4 !== 0) return false;
+	return /^[A-Za-z0-9+/]+={0,2}$/.test(cleanStr);
 }
 
 function base64Decode(str) {
@@ -365,9 +326,7 @@ function base64Decode(str) {
 		const bytes = new Uint8Array(atob(cleanStr).split('').map(c => c.charCodeAt(0)));
 		const decoder = new TextDecoder('utf-8');
 		return decoder.decode(bytes);
-	} catch(e) {
-		return "";
-	}
+	} catch(e) { return ""; }
 }
 
 async function MD5MD5(text) {
@@ -403,21 +362,12 @@ async function proxyURL(proxyURL, url) {
 	const URLs = await ADD(proxyURL);
 	const fullURL = URLs[Math.floor(Math.random() * URLs.length)];
 	let parsedURL = new URL(fullURL);
-	let URLProtocol = parsedURL.protocol.slice(0, -1) || 'https';
-	let URLHostname = parsedURL.hostname;
 	let URLPathname = parsedURL.pathname;
-	let URLSearch = parsedURL.search;
-	if (URLPathname.charAt(URLPathname.length - 1) == '/') {
-		URLPathname = URLPathname.slice(0, -1);
-	}
+	if (URLPathname.charAt(URLPathname.length - 1) == '/') URLPathname = URLPathname.slice(0, -1);
 	URLPathname += url.pathname;
-	let newURL = `${URLProtocol}://${URLHostname}${URLPathname}${URLSearch}`;
+	let newURL = `${parsedURL.protocol.slice(0, -1) || 'https'}://${parsedURL.hostname}${URLPathname}${parsedURL.search}`;
 	let response = await fetch(newURL);
-	let newResponse = new Response(response.body, {
-		status: response.status,
-		statusText: response.statusText,
-		headers: response.headers
-	});
+	let newResponse = new Response(response.body, { status: response.status, statusText: response.statusText, headers: response.headers });
 	newResponse.headers.set('X-New-URL', newURL);
 	return newResponse;
 }
@@ -429,10 +379,9 @@ async function getSUB(api, request, 追加UA, userAgentHeader) {
 	let 订阅转换URLs = "";
 	let 异常订阅 = "";
 	
-	// 修复: AbortSignal 控制器挂载
 	const controller = new AbortController();
-	// 在 getSUB 函数中找到这行并修改
-    const timeout = setTimeout(() => { controller.abort(); }, 8000); // 改为 8000
+	// 修复3：将超时时间延长至 8 秒，防止机场响应慢导致空拉取
+	const timeout = setTimeout(() => { controller.abort(); }, 8000);
 
 	try {
 		const responses = await Promise.allSettled(api.map(apiUrl => getUrl(request, apiUrl, 追加UA, userAgentHeader, controller.signal).then(response => response.ok ? response.text() : Promise.reject(response))));
@@ -440,25 +389,29 @@ async function getSUB(api, request, 追加UA, userAgentHeader) {
 			if (response.status === 'rejected') {
 				const reason = response.reason;
 				if (reason && reason.name === 'AbortError') return { status: '超时', value: null, apiUrl: api[index] };
-				return { status: '请求失败', value: null, apiUrl: api[index] };
+				return { status: '被阻断或失败', value: null, apiUrl: api[index] };
 			}
 			return { status: response.status, value: response.value, apiUrl: api[index] };
 		});
+		
 		for (const response of modifiedResponses) {
 			if (response.status === 'fulfilled') {
 				const content = await response.value || 'null';
-				if (content.includes('proxies:')) {
-					订阅转换URLs += "|" + response.apiUrl; 
-				} else if (content.includes('outbounds"') && content.includes('inbounds"')) {
-					订阅转换URLs += "|" + response.apiUrl;
-				} else if (content.includes('://')) {
-					newapi += content + '\n'; 
-				} else if (isValidBase64(content)) {
-					newapi += base64Decode(content) + '\n';
-				} else {
+				if (content.includes('proxies:')) 订阅转换URLs += "|" + response.apiUrl; 
+				else if (content.includes('outbounds"') && content.includes('inbounds"')) 订阅转换URLs += "|" + response.apiUrl;
+				else if (content.includes('://')) newapi += content + '\n'; 
+				else if (isValidBase64(content)) newapi += base64Decode(content) + '\n';
+				else {
 					const 异常订阅LINK = `trojan://CMLiussss@127.0.0.1:8888?security=tls&allowInsecure=1&type=tcp&headerType=none#%E5%BC%82%E5%B8%B8%E8%AE%A2%E9%98%85%20${response.apiUrl.split('://')[1].split('/')[0]}`;
 					异常订阅 += `${异常订阅LINK}\n`;
 				}
+			} else {
+				// 修复1：如果上游请求失败/超时，必定塞入一个报错节点，告别白屏和无意义的“无效订阅”报错
+				let hostName = "未知节点";
+				try { hostName = new URL(response.apiUrl).hostname; } catch(e){}
+				const errorMessage = encodeURIComponent(`节点获取失败-${response.status}-${hostName}`);
+				const 失败节点 = `trojan://CMLiussss@127.0.0.1:8888?security=tls&allowInsecure=1&type=tcp&headerType=none#${errorMessage}`;
+				异常订阅 += `${失败节点}\n`;
 			}
 		}
 	} catch (error) {
@@ -472,20 +425,18 @@ async function getSUB(api, request, 追加UA, userAgentHeader) {
 
 async function getUrl(request, targetUrl, 追加UA, userAgentHeader, signal) {
 	const newHeaders = new Headers(request.headers);
-	// 将原来的 UA 替换为标准 Chrome 浏览器的 UA，降低被上游拦截的概率
-	newHeaders.set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
-//...
+	// 修复2：强制伪装成真实 Windows Chrome 浏览器，规避上游机场的 WAF / BotFight 拦截
+	newHeaders.set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+	newHeaders.set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
+	newHeaders.set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+
 	const modifiedRequest = new Request(targetUrl, {
 		method: request.method,
 		headers: newHeaders,
 		body: request.method === "GET" ? null : request.body,
 		redirect: "follow",
-		signal: signal, // 挂载终止信号
-		cf: {
-			insecureSkipVerify: true,
-			allowUntrusted: true,
-			validateCertificate: false
-		}
+		signal: signal,
+		cf: { insecureSkipVerify: true, allowUntrusted: true, validateCertificate: false }
 	});
 	return fetch(modifiedRequest);
 }
@@ -510,21 +461,10 @@ async function KV(request, env, txt = 'ADD.txt', guest, subProtocol, subConverte
 				const content = await request.text();
 				await env.KV.put(txt, content);
 				return new Response("保存成功");
-			} catch (error) {
-				return new Response("保存失败: " + error.message, { status: 500 });
-			}
+			} catch (error) { return new Response("保存失败: " + error.message, { status: 500 }); }
 		}
 
-		let content = '';
-		let hasKV = !!env.KV;
-
-		if (hasKV) {
-			try {
-				content = await env.KV.get(txt) || '';
-			} catch (error) {
-				content = '读取数据时发生错误: ' + error.message;
-			}
-		}
+		let content = await (env.KV ? env.KV.get(txt) : '') || '';
 
 		const html = `
 			<!DOCTYPE html>
@@ -551,91 +491,57 @@ async function KV(request, env, txt = 'ADD.txt', guest, subProtocol, subConverte
 					---------------------------------------------------------------<br>
 					1. 在下方编辑器中, 使用 <code>[组名]</code> 或 <code>[组名:密码]</code> 格式来定义分组。<br>
 					2. <strong>发给用户的链接，必须带上您的访客TOKEN、分组名称，以及密码！</strong><br>
-					3. 为防止后台泄漏，千万不要直接把管理员TOKEN发给别人用哦！<br>
 					<br>
 					<strong>👉 您的安全访客 TOKEN (GUEST) 是：</strong><span style="color:red;font-weight:bold">${guest}</span><br>
 					<br>
-					<strong>👇 请复制以下格式发给用户（请自行将中文替换为您设置的组名和密码）：</strong><br>
+					<strong>👇 请复制以下格式发给用户（请自行替换组名和密码）：</strong><br>
 					---------------------------------------------------------------<br>
-					<strong>自适应订阅地址 (根据客户端自动返回合适格式):</strong><br>
-					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&group=在此填组名&pass=在此填密码','guest_0')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&group=在此填组名&pass=在此填密码</a><br>
-					<div id="guest_0" style="margin: 10px 10px 10px 10px;"></div>
+					<strong>自适应订阅地址:</strong><br>
+					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&group=在此填组名&pass=在此填密码','guest_0')" style="color:blue;text-decoration:underline;">https://${url.hostname}/sub?token=${guest}&group=在此填组名&pass=在此填密码</a><br>
+					<div id="guest_0" style="margin: 10px;"></div>
 					
-					<strong>Base64 普通订阅地址 (v2rayN / Shadowrocket 等):</strong><br>
-					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&b64&group=在此填组名&pass=在此填密码','guest_1')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&b64&group=在此填组名&pass=在此填密码</a><br>
-					<div id="guest_1" style="margin: 10px 10px 10px 10px;"></div>
+					<strong>Base64 订阅地址:</strong><br>
+					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&b64&group=在此填组名&pass=在此填密码','guest_1')" style="color:blue;text-decoration:underline;">https://${url.hostname}/sub?token=${guest}&b64&group=在此填组名&pass=在此填密码</a><br>
+					<div id="guest_1" style="margin: 10px;"></div>
 
-					<strong>Clash 订阅地址:</strong><br>
-					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&clash&group=在此填组名&pass=在此填密码','guest_2')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&clash&group=在此填组名&pass=在此填密码</a><br>
-					<div id="guest_2" style="margin: 10px 10px 10px 10px;"></div>
-
-					<strong>Singbox 订阅地址:</strong><br>
-					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&sb&group=在此填组名&pass=在此填密码','guest_3')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&sb&group=在此填组名&pass=在此填密码</a><br>
-					<div id="guest_3" style="margin: 10px 10px 10px 10px;"></div>
-
-					<strong>Surge 订阅地址:</strong><br>
-					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&surge&group=在此填组名&pass=在此填密码','guest_4')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&surge&group=在此填组名&pass=在此填密码</a><br>
-					<div id="guest_4" style="margin: 10px 10px 10px 10px;"></div>
-
-					<strong>Loon 订阅地址:</strong><br>
-					<a href="javascript:void(0)" onclick="copyToClipboard('https://${url.hostname}/sub?token=${guest}&loon&group=在此填组名&pass=在此填密码','guest_5')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${url.hostname}/sub?token=${guest}&loon&group=在此填组名&pass=在此填密码</a><br>
-					<div id="guest_5" style="margin: 10px 10px 10px 10px;"></div>
-
-					---------------------------------------------------------------<br>
-					################################################################<br>
-					订阅转换配置<br>
-					---------------------------------------------------------------<br>
-					SUBAPI（订阅转换后端）: <strong>${subProtocol}://${subConverter}</strong><br>
-					SUBCONFIG（订阅转换配置文件）: <strong>${subConfig}</strong><br>
 					---------------------------------------------------------------<br>
 					################################################################<br>
 					${FileName} 汇聚订阅编辑 (支持混填分组、明文、Base64文本及订阅链接): 
 					<div class="editor-container">
-						${hasKV ? `
-						<textarea class="editor" id="content" placeholder="支持带密码分组，格式示例：\n[分组A]\nhttps://...\n\n[分组B:yourpassword]\nhttps://...">${content}</textarea>
+						${env.KV ? `
+						<textarea class="editor" id="content" placeholder="[分组A]\nhttps://...\n\n[分组B:yourpassword]\nhttps://...">${content}</textarea>
 						<div class="save-container">
 							<button id="saveBtn" class="save-btn" onclick="saveContent()">保存</button>
 							<span class="save-status" id="saveStatus"></span>
 						</div>
 						` : '<p>请绑定 <strong>变量名称</strong> 为 <strong>KV</strong> 的KV命名空间</p>'}
 					</div>
-					<br>
-					<br>当前后台登录UA: <strong>${request.headers.get('User-Agent')}</strong>
+					<br><br>当前后台登录UA: <strong>${request.headers.get('User-Agent')}</strong>
 					<script>
 					function copyToClipboard(text, qrcode) {
-						navigator.clipboard.writeText(text).then(() => {
-							alert('已复制到剪贴板！请注意替换链接中的“在此填组名”和“在此填密码”。');
-						}).catch(err => {
-							console.error('复制失败:', err);
-						});
+						navigator.clipboard.writeText(text).then(() => { alert('已复制！请注意替换链接中的“在此填组名”和“在此填密码”。'); });
 						const qrcodeDiv = document.getElementById(qrcode);
 						qrcodeDiv.innerHTML = '';
-						new QRCode(qrcodeDiv, { text: text, width: 220, height: 220, colorDark: "#000000", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.Q });
+						new QRCode(qrcodeDiv, { text: text, width: 220, height: 220 });
 					}
 						
 					if (document.querySelector('.editor')) {
 						let timer;
 						const textarea = document.getElementById('content');
-		
-						function replaceFullwidthColon() {
-							const text = textarea.value;
-							textarea.value = text.replace(/：/g, ':');
-						}
 						
 						function saveContent() {
 							const button = document.getElementById('saveBtn');
 							const statusElem = document.getElementById('saveStatus');
 							try {
 								const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-								if (!isIOS) replaceFullwidthColon();
+								if (!isIOS) textarea.value = textarea.value.replace(/：/g, ':');
 								
 								button.textContent = '保存中...';
 								button.disabled = true;
 
-								let newContent = textarea.value || '';
 								fetch(window.location.href, {
 									method: 'POST',
-									body: newContent,
+									body: textarea.value || '',
 									headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
 									cache: 'no-cache'
 								})
@@ -653,17 +559,13 @@ async function KV(request, env, txt = 'ADD.txt', guest, subProtocol, subConverte
 									button.disabled = false;
 								});
 							} catch (error) {
-								button.textContent = '保存';
-								button.disabled = false;
+								button.textContent = '保存'; button.disabled = false;
 								if(statusElem) { statusElem.textContent = \`错误: \${error.message}\`; statusElem.style.color = 'red'; }
 							}
 						}
 		
 						textarea.addEventListener('blur', saveContent);
-						textarea.addEventListener('input', () => {
-							clearTimeout(timer);
-							timer = setTimeout(saveContent, 5000);
-						});
+						textarea.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(saveContent, 5000); });
 					}
 					</script>
 				</body>
