@@ -374,6 +374,10 @@ async function proxyURL(proxyURL, url) {
 
 async function getSUB(api, request, 追加UA, userAgentHeader) {
 	if (!api || api.length === 0) return [[], ""];
+	// 【新增修复】：过滤掉数组里的空字符串，防止误触发报错节点
+	api = api.filter(url => url && url.trim() !== '');
+	if (api.length === 0) return [[], ""];
+	
 	api = [...new Set(api)];
 	let newapi = "";
 	let 订阅转换URLs = "";
