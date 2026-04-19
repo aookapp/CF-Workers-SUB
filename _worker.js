@@ -431,7 +431,8 @@ async function getSUB(api, request, 追加UA, userAgentHeader) {
 	
 	// 修复: AbortSignal 控制器挂载
 	const controller = new AbortController();
-	const timeout = setTimeout(() => { controller.abort(); }, 2000);
+	// 在 getSUB 函数中找到这行并修改
+    const timeout = setTimeout(() => { controller.abort(); }, 8000); // 改为 8000
 
 	try {
 		const responses = await Promise.allSettled(api.map(apiUrl => getUrl(request, apiUrl, 追加UA, userAgentHeader, controller.signal).then(response => response.ok ? response.text() : Promise.reject(response))));
@@ -471,7 +472,9 @@ async function getSUB(api, request, 追加UA, userAgentHeader) {
 
 async function getUrl(request, targetUrl, 追加UA, userAgentHeader, signal) {
 	const newHeaders = new Headers(request.headers);
-	newHeaders.set("User-Agent", `${atob('djJyYXlOLzYuNDU=')} cmliu/CF-Workers-SUB ${追加UA}(${userAgentHeader})`);
+	// 将原来的 UA 替换为标准 Chrome 浏览器的 UA，降低被上游拦截的概率
+	newHeaders.set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
+//...
 	const modifiedRequest = new Request(targetUrl, {
 		method: request.method,
 		headers: newHeaders,
